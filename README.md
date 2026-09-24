@@ -2,6 +2,9 @@
 
 > **Nowoczesny, cyberpunkowy motyw dla bootloadera rEFInd zaprojektowany z myślą o panelach 4K OLED / QHD / FHD z automatyczną detekcją i wdrożeniem.**
 
+[![GitHub Releases](https://img.shields.io/badge/GitHub-Releases-blue?style=for-the-badge&logo=github)](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases)
+[![Licencja](https://img.shields.io/badge/Licencja-GCPL--1.0-orange?style=for-the-badge)](LICENSE)
+
 ![Ghoul Cyber Preview](full_bootloader_preview_1080p.png)
 
 ---
@@ -25,6 +28,7 @@ Jeśli motyw przypadł Ci do gustu, świetnie wygląda na Twoim ekranie lub zaos
 ## 👤 Autor i Podpis (Author & Signature)
 
 - **Autor / Creator:** **Dismonder**
+- **Wydania / Releases:** [Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases)
 - **Copyright:** © 2026 Dismonder. Wszystkie prawa zastrzeżone / All Rights Reserved.
 - **Licencja:** [Ghoul Cyber Protective License (GCPL-1.0)](LICENSE)
 
@@ -63,6 +67,8 @@ Pełny, prawnie wiążący tekst licencji w języku polskim i angielskim znajduj
 ---
 
 ## 🚀 Szybki start (Quick Start)
+
+> 📦 **Gotowe wydania:** Gotowe, spakowane archiwa motywu i instalatora możesz również pobrać bezpośrednio z zakładki **[Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases)**.
 
 ### 1. Wdrożenie na CachyOS / Linux (automatyczne)
 Uruchomienie skryptu bez argumentów wykonuje pełną detekcję, budowę motywu 4K oraz aktywację w rEFInd:
