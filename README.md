@@ -8,17 +8,15 @@
 
 ## ☕ Wesprzyj projekt (Support the Author)
 
-Jeśli motyw przypadł Ci do gustu, świetnie wygląda na Twoim ekranie lub zaoszczędził Ci godzin konfiguracji bootloadera – możesz docenić pracę i postawić kawę albo wesprzeć stały rozwój projektu:
+Jeśli motyw przypadł Ci do gustu, świetnie wygląda na Twoim ekranie lub zaoszczędził Ci konfiguracji – możesz docenić pracę i postawić wirtualną kawę:
 
-[![Postaw kawę na BuyCoffee.to](https://img.shields.io/badge/BuyCoffee.to-Postaw%20kawę-37AC49?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://buycoffee.to/dismonder)
+[![Postaw kawę na BuyCoffee.to](https://img.shields.io/badge/BuyCoffee.to-Postaw%20kawę%20(BLIK)-37AC49?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://buycoffee.to/dismonder)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dismonder)
-[![Zostań Patronem na Patronite](https://img.shields.io/badge/Patronite-Zostań%20Patronem-EC1D24?style=for-the-badge)](https://patronite.pl/dismonder)
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Dismonder)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Dismonder-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Dismonder)
 
-- 🇵🇱 **[BuyCoffee.to (buycoffee.to/dismonder)](https://buycoffee.to/dismonder)** – szybka kawa w złotówkach (BLIK, karta, Apple Pay/Google Pay).
-- 🌍 **[Ko-fi (ko-fi.com/dismonder)](https://ko-fi.com/dismonder)** – wsparcie międzynarodowe (PayPal, karta, brak prowizji platformy).
-- 🏆 **[Patronite (patronite.pl/dismonder)](https://patronite.pl/dismonder)** – comiesięczny mecenat / subskrypcja.
-- 🐙 **[GitHub Sponsors (github.com/sponsors/Dismonder)](https://github.com/sponsors/Dismonder)** – oficjalny program sponsoringu programistów na GitHubie.
+- 🇵🇱 **[BuyCoffee.to/dismonder](https://buycoffee.to/dismonder)** – szybka kawa w PLN (BLIK, karta, Apple Pay / Google Pay).
+- 🌍 **[Ko-fi.com/dismonder](https://ko-fi.com/dismonder)** – wsparcie zagraniczne (PayPal / karty, 0% prowizji platformy).
+- 🐙 **[GitHub Sponsors (Dismonder)](https://github.com/sponsors/Dismonder)** – bezpośredni program sponsoringu GitHub (profil zgłoszony do weryfikacji).
 
 ---
 
