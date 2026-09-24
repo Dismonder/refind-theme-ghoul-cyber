@@ -1,0 +1,9 @@
+# GitHub Sponsor and Donation configuration
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+github: [Dismonder]
+ko_fi: dismonder
+buy_me_a_coffee: dismonder
+custom:
+  - https://buycoffee.to/dismonder
+  - https://patronite.pl/dismonder

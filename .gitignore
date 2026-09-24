@@ -19,3 +19,12 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Video & audio rendering artifacts
+*.mp4
+*.wav
+temp_*
+*_scene*.jpg
+render_*.py
+
+
