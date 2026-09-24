@@ -2,6 +2,8 @@
 
 > **Nowoczesny, cyberpunkowy motyw dla bootloadera rEFInd zaprojektowany z myślą o panelach 4K OLED / QHD / FHD z automatyczną detekcją i wdrożeniem.**
 
+![Ghoul Cyber Preview](full_bootloader_preview_1080p.png)
+
 ---
 
 ## 👤 Autor i Podpis (Author & Signature)
