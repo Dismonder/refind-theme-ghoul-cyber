@@ -60,7 +60,7 @@ The full, legally binding license text in Polish and English is in the [LICENSE]
   - 240×240 px tool icons, 864×864 px / 270×270 px selection frames.
   - Support for 1440p (2560×1440), 1080p (1920×1080) and other 16:9 resolutions.
 - **Fully automated installer (`build_and_deploy_theme.py`):**
-  - **Linux (CachyOS / Arch / others):** fully automatic — finds rEFInd on the ESP, maps UEFI NVRAM entries to the right boot cards (*Windows DEV*, *Windows Gaming*, *CachyOS*), installs the assets to `/boot/efi/EFI/refind/themes/ghoul-cyber` and safely updates `refind.conf` (with a transactional backup and rollback).
+  - **Linux (any major distribution):** fully automatic — installs missing packages with your package manager, installs rEFInd itself if it is missing (after asking), maps UEFI NVRAM entries to the right boot cards (*Windows DEV*, *Windows Gaming*, *CachyOS* — each only if you have it; Linux-only PCs are fine), installs the assets to `/boot/efi/EFI/refind/themes/ghoul-cyber` and safely updates `refind.conf` (with a transactional backup and rollback).
   - **Windows:** build-only mode that produces a ready-to-copy package in `dist/ghoul-cyber`.
 - **Asset generator with live telemetry:**
   - Automatically prints your CPU, RAM, GPU, NVMe drive and Secure Boot status onto the wallpaper.
@@ -73,22 +73,22 @@ The full, legally binding license text in Polish and English is in the [LICENSE]
 | | Requirement |
 | :--- | :--- |
 | Firmware | PC booting in **UEFI** mode (not Legacy BIOS / CSM) — check with `ls /sys/firmware/efi/efivars` |
-| Linux | **CachyOS / Arch** — fully automatic (missing packages are installed via `pacman`). Other distros: install `efibootmgr` and `util-linux` first |
-| Python | **Python 3** + **Pillow** |
-| Boot manager | **rEFInd** installed on the EFI System Partition (ESP) |
+| Linux | Any distribution with `pacman` (Arch, CachyOS, EndeavourOS, Manjaro), `apt` (Debian, Ubuntu, Mint, Pop!_OS), `dnf` (Fedora), `zypper` (openSUSE), `xbps` (Void) or `apk` (Alpine) — missing packages are installed automatically |
+| Python | **Python 3** (Pillow is installed automatically on Linux) |
+| Boot manager | **rEFInd** — if it is missing, the installer offers to install it for you |
 
-### Installing rEFInd (if you don't have it yet)
+### No rEFInd yet?
 
-```bash
-# CachyOS / Arch
-sudo pacman -S refind
-sudo refind-install
+Nothing to do by hand: when rEFInd is not found, the installer asks *"rEFInd is not installed. Install it now?"*, installs the distribution package and runs `refind-install` (your current boot loader stays in the firmware menu). Use `--install-refind` to skip the question.
 
-# Ubuntu / Debian
-sudo apt install refind
-```
+| Situation | What happens |
+| :--- | :--- |
+| PC started in legacy BIOS / CSM | stops with an explanation — rEFInd needs UEFI |
+| **Secure Boot is on** | stops with an explanation — an unsigned rEFInd would not start; turn Secure Boot off or install rEFInd with shim/MOK yourself |
+| openSUSE | rEFInd is not in the official repositories — the installer points you to the [official download](https://www.rodsbooks.com/refind/getting.html) |
+| No Windows / another Linux than CachyOS | fine — the theme is installed and rEFInd picks the matching icons (`os_linux`, `os_ubuntu`, `os_fedora`, …) itself |
 
-The installer looks for rEFInd in `/boot/EFI/refind`, `/boot/efi/EFI/refind` and `/efi/EFI/refind` (or pass `--refind-dir`).
+The installer looks for rEFInd in `/boot/EFI/refind`, `/boot/efi/EFI/refind`, `/efi/EFI/refind` and on every mounted partition (or pass `--refind-dir`).
 
 ---
 
@@ -160,12 +160,102 @@ include themes/ghoul-cyber/theme.conf
 | `--build-only` | Builds the theme into `dist/` without touching the ESP or the rEFInd config |
 | `--dry-run` | Checks the environment and prints the planned operations without modifying the disk |
 | `--non-interactive` | Fails instead of asking which Windows installation is DEV |
+| `--install-refind` | Linux: install rEFInd without asking when it is missing |
 | `--source-dir PATH` | Path to the directory with the raw source graphics |
 | `--output-dir PATH` | Output path for the generated theme |
 | `--refind-dir PATH` | Path to the rEFInd directory on the mounted ESP |
 | `--cpu`, `--gpu`, `--ram`, `--nvme` | Manually override the telemetry text printed on the wallpaper |
 | `--secure-boot {auto,on,off}` | Manually set the Secure Boot indicator |
 | `--font PATH` | Path to a custom TTF/OTF font |
+| `--theme NAME` | Visual theme from `themes/` (default `ghoul-cyber`) |
+| `--list-themes` | Prints the available themes |
+| `--config PATH` | Settings file (default: `boot-config.json` next to the script, if present) |
+| `--check-config` | Validates the settings and prints the generated `theme.conf` |
+| `--install` | Windows: also install the built theme into rEFInd (asks for UAC) |
+
+---
+
+## 🖥️ Theme Studio — build your own boot screen
+
+`theme_studio.py` turns the installer into a small app: pick a theme, tune it with a **live preview**, then build or install it in one click.
+
+```bash
+python3 theme_studio.py
+```
+
+- **Themes** on the left, a live preview of the final rEFInd screen on the right (it redraws a moment after every change).
+- **Install** tab: **BUILD** (package in `dist/ghoul-cyber`) or **BUILD & INSTALL** (straight into rEFInd), plus **dry run** that only shows what would happen. Live log; if the installer asks which Windows is DEV, answer in the field under the log.
+  - Linux: asks for your sudo password in its own dialog (`SUDO_ASKPASS`).
+  - Windows: asks for administrator rights (UAC), finds the EFI partition that really holds rEFInd (also on multi-disk PCs), gives it a temporary drive letter and removes it afterwards.
+- **Layout / Elements / Behaviour / Menu entries** tabs — every option of `boot-config.json` (below) as a form with explanations.
+- Fail-safe: invalid values are shown in red and block building, the last valid settings are never overwritten, and any failure while installing rolls every file back (`refind.conf` also keeps a timestamped `.bak`).
+- Settings are saved automatically to `boot-config.json`; **Import / Export** lets you share a whole look as one file.
+- **Language:** English, or Polish when your system language is Polish; switch any time with **PL | EN** in the top-right corner (the choice is remembered). Force it with `GHOUL_LANG=en` / `GHOUL_LANG=pl`.
+- **Tile numbers:** *Elements → Numbers on system tiles / Number order* — automatic (your menu entries first, then the systems found on this PC), your own order, or no numbers at all.
+- Needs Tk: `sudo pacman -S tk` (Arch/CachyOS), `sudo apt install python3-tk` (Debian/Ubuntu), `sudo dnf install python3-tkinter` (Fedora), `sudo zypper install python3-tk` (openSUSE). Without Tk it falls back to a text menu.
+
+---
+
+## 🧩 Customisation (`boot-config.json`)
+
+One JSON file controls the layout, what is shown and how rEFInd behaves. Theme Studio writes it for you; you can also edit it by hand — only the values you change need to be there. See [`boot-config.example.json`](boot-config.example.json).
+
+| Section | What you can change |
+| :--- | :--- |
+| `layout` | screen resolution (icons scale with it automatically), how many system tiles are visible at once (the rest scroll by one), scroll arrows on/off (off by default), tile and tool icon size, selection frame size, artwork scale / brightness, how much the art is dimmed under the UI |
+| `hud` | accent colour, title / tagline / kanji column (on/off and own text), which hardware rows are shown, up to 4 own text rows, status line and its text, decorations, key-hint bar, scanlines, glitch bars, the original Ghoul overlay |
+| `cards` | numbers on the OS tiles on/off, and their order (empty = automatic: your menu entries first, then the systems found on this PC; tiles left out of the list get no number) |
+| `refind` | timeout, default entry (`+` = last booted), how many tools the bottom row shows at most (most important first — rEFInd never scrolls that row), which tools are shown (default: BIOS, reboot, power, about, boot order, hidden entries + every tool that exists), extra tools to add from your distribution's packages into `EFI/tools` (EFI Shell: Arch/CachyOS, Debian/Ubuntu; MemTest86+: Arch, Debian/Ubuntu — CachyOS has no EFI build), hidden UI elements, where to scan, mouse / touch, skipped folders and files, maximum number of entries |
+| `entries` | your own menu entries: name, tile (`cachyos`, `win_dev`, `win_game`, `windows`, `linux`, …), EFI loader, partition and kernel options |
+
+```bash
+python3 build_and_deploy_theme.py --check-config          # validate + print the generated theme.conf
+python3 build_and_deploy_theme.py --config my-look.json    # use another settings file
+```
+
+Every value is validated (type, range, allowed characters) before anything is built, and the file is picked up automatically when it sits next to the script.
+
+> 🔢 The index numbers are not baked into the tiles any more: the builder finds the number painted on each card, paints it out and draws the right one (same place, size, weight and colour) — so a Linux-only PC gets `01`, not `03`.
+
+> 🐧 Every theme also ships a generic **LINUX** tile (`card_linux.png` → `icons/os_linux.png`) for distributions other than CachyOS; `card_linux_gnu.png` keeps the earlier "GNU // LINUX" variant.
+
+> ℹ️ Earlier versions hard-coded a `Windows 11 Gaming` menu entry pointing at one specific disk. It is gone: add your own through **Menu entries** (or `entries`) if you need it.
+
+---
+
+## 🎨 Alternative Themes
+
+Besides the original Ghoul Cyber look, seventeen anime- and game-inspired OLED variants are included. Each one has its own AI artwork, OS cards and accent color. The installer, the telemetry text and the rEFInd layout are the same for all of them, and the theme is always installed as `themes/ghoul-cyber`.
+
+| Theme | Accent | Vibe |
+| :--- | :--- | :--- |
+| `cursed-domain` | violet `#A020F0` | occult sorcery, cursed energy, broken torii |
+| `chainsaw-devil` | orange `#FF6A00` | devil-hunter horror, chainsaws, ink splatter |
+| `titan-fall` | amber `#FFB21A` | colossal giant over the wall, grappling soldier |
+| `mecha-unit` | green `#7CFF3A` | 90s biomechanical mecha, hex warning HUD |
+| `demon-blade` | cyan `#2BB8FF` | Taisho swordsman, ukiyo-e water dragon, wisteria |
+| `neon-ronin` | magenta `#FF2E97` | cyberpunk ronin with oni mask, neon rain |
+| `void-horizon` | gold `#FFC24B` | black hole, lone astronaut |
+| `shadow-monarch` | indigo `#5B6CFF` | shadow sovereign, dungeon gate rift |
+| `dragon-ki` | yellow `#FFE23B` | martial-arts power-up, ki aura, lightning |
+| `soul-reaper` | mint `#19FFC2` | cracked hollow mask, cleaver sword, black butterflies |
+| `frost-mage` | ice blue `#9FE8FF` | elf mage, ice magic circle, snowy ruins |
+| `sakura-storm` | pink `#FF8FC7` | samurai under a full moon, cherry-blossom storm |
+| `elden-lord` | gold `#E8B84A` | souls-like knight, golden great tree, grace |
+| `night-city` | yellow `#FCEE0A` | cyberpunk merc, yellow-collar jacket, megacity, glitch |
+| `hell-slayer` | hellfire `#FF4A1C` | armored demon slayer, skulls, lava |
+| `hollow-vessel` | periwinkle `#A8B8FF` | tiny horned knight, bug kingdom caverns, bench |
+| `wolf-witcher` | silver `#D9E1EC` | white-haired monster hunter, wolf medallion, two swords |
+
+```bash
+python3 build_and_deploy_theme.py --theme cursed-domain
+```
+
+A preview of each theme is in `themes/<name>/preview.jpg`. To make your own, add a folder `themes/<name>/` containing `art.png`/`art.jpg` (16:9, artwork in the top-right and bottom-left corners on pure black), an optional `selection_item_linux/windev/wingame.png` card set, and a `theme.json`:
+
+```json
+{ "accent": "#A020F0", "title": "CURSED_DOMAIN_v1.0", "kanji": "呪術核", "tagline": "[ DOMAIN :: EXPANSION ]", "art_brightness": 1.0 }
+```
 
 ---
 
@@ -178,7 +268,7 @@ efibootmgr                         # find the "rEFInd Boot Manager" entry number
 sudo efibootmgr -o 0001,0000,0003  # put it first
 ```
 
-**An OS is missing from the menu** — `theme.conf` hides some directories via `dont_scan_dirs` (e.g. `EFI/ubuntu`). Remove the entry you need from that line.
+**An OS is missing from the menu** — `theme.conf` hides `EFI/refind` and `EFI/BOOT` via `dont_scan_dirs` (set in Theme Studio → Behaviour). Remove the entry you need from that line.
 
 ---
 
@@ -198,4 +288,10 @@ The project ships with unit tests covering the build contract, asset geometry, t
 
 ```bash
 python3 -m pytest tests
+```
+
+`tests/test_robustness.py` is a randomised stress test ("fuzzing"): garbage settings, broken JSON and images, odd `efibootmgr` / `lsblk` / PowerShell output, random input typed into Theme Studio. Every case must either work or stop with a clear message. Make it heavier and replay a failure by its seed:
+
+```bash
+FUZZ_ROUNDS=500 FUZZ_SEED=1234 python3 -m pytest tests/test_robustness.py
 ```
