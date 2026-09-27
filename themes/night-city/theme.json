@@ -1,0 +1,10 @@
+{
+  "name": "Night City",
+  "description": "Cyberpunk open-world RPG: edgerunner with yellow-collar jacket, chrome arm, megacorp tower, glitch.",
+  "accent": "#FCEE0A",
+  "title": "NIGHT_CITY_v1.0",
+  "kanji": "夜の街",
+  "tagline": "[ WAKE_UP :: SAMURAI ]",
+  "art_brightness": 0.85,
+  "fan_art": true
+}

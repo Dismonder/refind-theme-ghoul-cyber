@@ -1,0 +1,60 @@
+name: Release
+
+# Push a tag like v2.0.0 (or run it by hand) to build every release asset and
+# attach it to a DRAFT release. Review the draft on GitHub, then publish it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. v2.0.0 (the tag is created on the chosen branch if missing)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+          python -m pip install --upgrade pip
+          python -m pip install pillow pytest
+
+      - name: Tests
+        env:
+          FUZZ_ROUNDS: "10"
+        run: python -m pytest -q tests -k "not Studio"
+
+      - name: Build release assets
+        run: python tools/make_release.py --version "$VERSION" --out release --jobs 4
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/release-notes/${VERSION}.md"
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            if [ -f "$notes" ]; then notes_arg=(--notes-file "$notes"); else notes_arg=(--generate-notes); fi
+            gh release create "$VERSION" --draft --target "$GITHUB_SHA" \
+              --title "Ghoul Cyber $VERSION" "${notes_arg[@]}"
+          fi
+          gh release upload "$VERSION" release/"$VERSION"/* --clobber
+          echo "Draft ready: $(gh release view "$VERSION" --json url -q .url)" >> "$GITHUB_STEP_SUMMARY"

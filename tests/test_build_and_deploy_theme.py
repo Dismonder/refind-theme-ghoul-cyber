@@ -317,6 +317,9 @@ class ThemeBuildTests(unittest.TestCase):
                 "icons/arrow_left.png": small,
                 "icons/arrow_right.png": small,
                 "icons/mouse.png": small,
+                "icons/func_install.png": small,
+                "icons/tool_windows_rescue.png": small,
+                "icons/tool_apple_rescue.png": small,
                 "icons/vol_internal.png": badge,
                 "icons/vol_external.png": badge,
                 "icons/vol_optical.png": badge,
@@ -330,7 +333,9 @@ class ThemeBuildTests(unittest.TestCase):
                     image.verify()
             self.assertEqual(
                 (output / "theme.conf").read_text(encoding="utf-8"),
-                subject.THEME_CONF,
+                subject.render_theme_conf(
+                    subject.default_options(), subject.Resolution(1920, 1080)
+                ),
             )
             state = json.loads(
                 (output / "install-state.json").read_text(encoding="utf-8")
@@ -676,6 +681,510 @@ class LinuxWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(exit_code, 0)
             self.assertTrue((root / "out" / "background.png").is_file())
+
+
+class OptionsTests(unittest.TestCase):
+    def test_defaults_are_valid_and_scale_with_resolution(self):
+        subject = load_subject()
+        options, errors, warnings = subject.validate_options({})
+        self.assertEqual((errors, warnings), ([], []))
+        self.assertEqual(subject.icon_geometry(options, subject.Resolution(3840, 2160)), (768, 240))
+        self.assertEqual(subject.icon_geometry(options, subject.Resolution(1920, 1080)), (384, 120))
+
+    def test_invalid_values_are_reported_and_replaced_by_defaults(self):
+        subject = load_subject()
+        options, errors, warnings = subject.validate_options({
+            "refind": {"timeout": 9999, "showtools": ["shell", "rm -rf"]},
+            "hud": {"title_text": 'bad "quote"', "accent": "red"},
+            "entries": [{"label": "Ok", "card": "nope", "loader": "../../x"}],
+            "typo": 1,
+        })
+        self.assertEqual(options["refind.timeout"], 10)
+        self.assertEqual(len(errors), 6, errors)
+        self.assertEqual(warnings, ["typo: unknown option, ignored"])
+
+    def test_theme_conf_reflects_options_and_entries(self):
+        subject = load_subject()
+        options, errors, _ = subject.validate_options({
+            "refind": {"timeout": 0, "enable_mouse": True, "default_selection": "CachyOS",
+                       "hideui": ["hints"], "showtools": ["reboot", "shutdown"]},
+            "entries": [{"label": "Windows Gaming", "card": "win_game",
+                         "volume": "GAMEDISK", "loader": "\\EFI\\Microsoft\\Boot\\bootmgfw.efi"}],
+        })
+        self.assertEqual(errors, [])
+        subject.configure_geometry(*subject.icon_geometry(options, subject.Resolution(2560, 1440)))
+        conf = subject.render_theme_conf(options, subject.Resolution(2560, 1440))
+        for expected in ("resolution 2560 1440", "timeout 0", "enable_mouse", "hideui hints",
+                         'default_selection "CachyOS"', "showtools reboot, shutdown",
+                         "big_icon_size 512", 'menuentry "Windows Gaming" {',
+                         'volume "GAMEDISK"', "icons/os_win_game.png"):
+            self.assertIn(expected, conf)
+        self.assertNotIn("af082e06", conf)
+
+    def test_save_writes_only_changes_and_round_trips(self):
+        subject = load_subject()
+        options = subject.default_options()
+        options["hud.nav_bar"] = False
+        options["refind.timeout"] = 5
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "boot-config.json"
+            subject.save_options(options, path)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved, {"version": 1, "hud": {"nav_bar": False}, "refind": {"timeout": 5}})
+            self.assertEqual(subject.load_options(path), options)
+
+    def test_hud_lines_follow_options(self):
+        subject = load_subject()
+        options = subject.default_options()
+        options["hud.hardware_lines"] = ("cpu", "gpu")
+        options["hud.custom_lines"] = ("hello",)
+        lines = subject.hud_text_lines(subject.HardwareInfo(cpu="X", gpu="Y"), options)
+        self.assertEqual(lines, ["CPU: X", "GPU: Y", "hello"])
+        options["hud.hardware"] = False
+        self.assertEqual(subject.hud_text_lines(subject.HardwareInfo(), options), ["hello"])
+
+
+class WindowsInstallTests(unittest.TestCase):
+    def _built_theme(self, subject, root: Path) -> Path:
+        source = root / "source"
+        source.mkdir()
+        write_synthetic_assets(source)
+        output = root / "dist" / "ghoul-cyber"
+        subject.build_theme(source, output, subject.Resolution(1920, 1080), subject.HardwareInfo())
+        return output
+
+    def _fake_refind(self, root: Path) -> Path:
+        refind = root / "esp" / "EFI" / "refind"
+        refind.mkdir(parents=True)
+        (refind / "refind.conf").write_bytes(b"timeout 20\r\n")
+        (refind / "refind_x64.efi").write_bytes(b"efi")
+        return refind
+
+    def test_installs_theme_and_activates_it_with_backup(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            theme, refind = self._built_theme(subject, root), self._fake_refind(root)
+            subject.install_theme_windows(theme, refind)
+            config = (refind / "refind.conf").read_bytes()
+            self.assertIn(b"\r\ninclude themes/ghoul-cyber/theme.conf\r\n", config)
+            self.assertTrue((refind / "themes" / "ghoul-cyber" / "background.png").is_file())
+            self.assertEqual(len(list(refind.glob("refind.conf.ghoul-cyber-*.bak"))), 1)
+
+    def test_failure_rolls_everything_back(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            theme, refind = self._built_theme(subject, root), self._fake_refind(root)
+            with patch.object(subject, "update_managed_config", side_effect=subject.ThemeError("boom")):
+                with self.assertRaises(subject.ThemeError):
+                    subject.install_theme_windows(theme, refind)
+            self.assertEqual((refind / "refind.conf").read_bytes(), b"timeout 20\r\n")
+            self.assertFalse((refind / "themes" / "ghoul-cyber" / "background.png").exists())
+
+    def test_lists_esp_partitions(self):
+        subject = load_subject()
+
+        def runner(command):
+            return subject.subprocess.CompletedProcess(command, 0, "0:1:\n2:1:S\njunk\n", "")
+
+        self.assertEqual(subject.list_windows_esps(runner), [(0, 1, ""), (2, 1, "S")])
+
+
+class DependencyBootstrapTests(unittest.TestCase):
+    def test_refreshes_databases_when_they_are_missing(self):
+        subject = load_subject()
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            if "-S" in command:
+                return subject.subprocess.CompletedProcess(
+                    command, 1, "", "warning: database file for 'core' does not exist\n"
+                    "error: target not found: python-pillow",
+                )
+            return subject.subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(subject.os, "geteuid", return_value=0, create=True):
+            subject.bootstrap_linux_dependencies(("Pillow",), runner, manager="pacman")
+        self.assertEqual([c[1] for c in calls], ["-S", "-Sy"])
+        self.assertIn("python-pillow", calls[-1])
+
+    def test_apt_refreshes_lists_and_keeps_debconf_quiet(self):
+        subject = load_subject()
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            failed = "install" in command and len([c for c in calls if "install" in c]) == 1
+            return subject.subprocess.CompletedProcess(command, 1 if failed else 0, "", "E: Unable to locate")
+
+        with patch.object(subject.os, "geteuid", return_value=0, create=True):
+            subject.bootstrap_linux_dependencies(("Pillow", "refind", "font"), runner, manager="apt-get")
+        self.assertEqual(calls[0], ("env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y",
+                                    "python3-pil", "refind", "fonts-dejavu-core"))
+        self.assertEqual(calls[1][-2:], ("apt-get", "update"))
+        self.assertEqual(calls[2], calls[0])
+
+    def test_unpackaged_or_unknown_manager_fails_clearly(self):
+        subject = load_subject()
+        with self.assertRaisesRegex(subject.ThemeError, "rodsbooks"):
+            subject.bootstrap_linux_dependencies(("refind",), lambda c: None, manager="zypper")
+        with patch.object(subject, "linux_package_manager", return_value=None):
+            with self.assertRaisesRegex(subject.ThemeError, "no supported package manager"):
+                subject.bootstrap_linux_dependencies(("efibootmgr",), lambda c: None)
+
+    def test_every_manager_knows_every_dependency(self):
+        subject = load_subject()
+        for name, manager in subject.LINUX_PACKAGE_MANAGERS.items():
+            self.assertEqual(set(manager.names), {"Pillow", "efibootmgr", "lsblk", "findmnt", "font", "refind"},
+                             name)
+
+
+class RefindInstallTests(unittest.TestCase):
+    def test_refuses_with_secure_boot_on(self):
+        subject = load_subject()
+        with patch.object(subject, "secure_boot_enabled", return_value=True):
+            with self.assertRaisesRegex(subject.ThemeError, "Secure Boot"):
+                subject.install_refind(lambda c: None, assume_yes=True)
+
+    def test_declined_or_non_interactive_does_nothing(self):
+        subject = load_subject()
+        calls = []
+        with patch.object(subject, "secure_boot_enabled", return_value=False):
+            for kwargs in ({"ask": lambda q: "n"}, {"interactive": False},
+                           {"ask": lambda q: (_ for _ in ()).throw(EOFError())}):
+                with self.assertRaisesRegex(subject.ThemeError, "--install-refind"):
+                    subject.install_refind(lambda c: calls.append(c), **kwargs)
+        self.assertEqual(calls, [])
+
+    def test_installs_package_then_runs_refind_install(self):
+        subject = load_subject()
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            return subject.subprocess.CompletedProcess(command, 0, "", "")
+
+        with (
+            patch.object(subject, "secure_boot_enabled", return_value=None),
+            patch.object(subject.shutil, "which", return_value=None),
+            patch.object(subject, "linux_package_manager", return_value="dnf"),
+            patch.object(subject.os, "geteuid", return_value=0, create=True),
+        ):
+            subject.install_refind(runner, ask=lambda q: "tak")
+        self.assertEqual(calls, [("dnf", "install", "-y", "rEFInd"), ("refind-install",)])
+
+    def test_linux_only_and_other_distros_need_no_windows(self):
+        subject = load_subject()
+        ubuntu = subject.BootEntry("0001", "ubuntu", "c", r"\EFI\ubuntu\shimx64.efi")
+        with patch.object(subject, "_os_release_id", return_value="ubuntu"):
+            self.assertEqual(subject.assign_boot_roles([ubuntu], choose_dev=None, non_interactive=True), {})
+        cachy = subject.BootEntry("0002", "CachyOS", "d", r"\vmlinuz-linux-cachyos")
+        with patch.object(subject, "_os_release_id", return_value="cachyos"):
+            roles = subject.assign_boot_roles([cachy], choose_dev=None, non_interactive=True)
+        self.assertEqual(set(roles), {"cachyos"})
+        win = subject.BootEntry("0003", "Windows Boot Manager", "e", r"\EFI\Microsoft\Boot\bootmgfw.efi")
+        with patch.object(subject, "_os_release_id", return_value="fedora"):
+            roles = subject.assign_boot_roles([win, ubuntu], choose_dev=None, non_interactive=True)
+        self.assertEqual(set(roles), {"win_dev", "win_game"})
+
+    def test_extra_tools_are_installed_from_packages_and_optional(self):
+        subject = load_subject()
+        installed = set()
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            if command[:2] == ("pacman", "-S"):
+                installed.update(command[4:])
+            if command[:2] == ("pacman", "-Si"):
+                return subject.subprocess.CompletedProcess(command, 0, f"Name            : {command[2]}\n", "")
+            return subject.subprocess.CompletedProcess(command, 0, "", "")
+
+        def exists(path):
+            text = path.as_posix()
+            return (("edk2-shell" in installed and text.endswith("x64/Shell_Full.efi"))
+                    or ("memtest86+-efi" in installed and text == "/boot/memtest86+/memtest.efi"))
+
+        with (
+            patch.object(subject, "_root_file_exists", side_effect=lambda p, r: exists(p)),
+            patch.object(subject.os, "geteuid", return_value=0, create=True),
+        ):
+            planned = subject.plan_extra_tools(("shell", "memtest"), Path("/boot"), runner, manager="pacman")
+            self.assertEqual(planned, (("/usr/share/edk2-shell/x64/Shell_Full.efi", "shellx64.efi"),
+                                       ("/boot/memtest86+/memtest.efi", "memtest86.efi")))
+            # no package on this distribution, or the install fails: skipped, never fatal
+            installed.clear()
+            self.assertEqual(subject.plan_extra_tools(("shell",), Path("/x"), runner, manager="dnf"), ())
+            failing = lambda c: subject.subprocess.CompletedProcess(c, 1, "", "error")  # noqa: E731
+            self.assertEqual(subject.plan_extra_tools(("memtest",), Path("/x"), failing, manager="pacman"), ())
+
+    def test_extra_tools_skip_a_package_that_is_only_provided(self):
+        subject = load_subject()
+        calls = []
+
+        def runner(command):   # CachyOS: memtest86+-efi resolves to memtest86+ (BIOS only)
+            calls.append(command)
+            return subject.subprocess.CompletedProcess(command, 0, "Name            : memtest86+\n", "")
+
+        fetched = []
+        with (
+            patch.object(subject, "_root_file_exists", return_value=False),
+            patch.object(subject, "_extract_from_arch", side_effect=lambda pkg, member, dest, r: fetched.append(pkg)),
+        ):
+            self.assertEqual(subject.plan_extra_tools(("memtest",), Path("/boot"), runner, manager="pacman"), ())
+        self.assertFalse([c for c in calls if c[:2] == ("pacman", "-S")])   # the substitute is never installed
+        self.assertEqual(fetched, ["memtest86+-efi"])                        # the EFI file comes from Arch
+
+    def test_arch_efi_fallback_verifies_before_extracting(self):
+        subject = load_subject()
+        import io
+        import urllib.request
+        calls = []
+
+        class Reply(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def urlopen(url, timeout=0):
+            calls.append(("GET", url))
+            if url.endswith("/json/"):
+                return Reply(json.dumps({"filename": "memtest86+-efi-7.20-2-any.pkg.tar.zst"}).encode())
+            return Reply(b"data")
+
+        def runner(command):
+            calls.append(command)
+            ok = not (command[0] == "pacman-key" and bad_signature)
+            return subject.subprocess.CompletedProcess(command, 0 if ok else 1, "", "" if ok else "BAD signature")
+
+        with (
+            patch.object(urllib.request, "urlopen", side_effect=urlopen),
+            patch.object(subject.os, "geteuid", return_value=0, create=True),
+        ):
+            bad_signature = False
+            subject._extract_from_arch("memtest86+-efi", "boot/memtest86+/memtest.efi",
+                                       "/usr/share/ghoul-cyber/memtest86.efi", runner)
+            order = [c[0] for c in calls if not (isinstance(c, tuple) and c[0] == "GET")]
+            self.assertEqual(order, ["pacman-key", "bsdtar", "install"])
+            calls.clear()
+            bad_signature = True
+            with self.assertRaisesRegex(subject.ThemeError, "signature"):
+                subject._extract_from_arch("memtest86+-efi", "boot/memtest86+/memtest.efi",
+                                           "/usr/share/ghoul-cyber/memtest86.efi", runner)
+            self.assertFalse([c for c in calls if c[0] in {"bsdtar", "install"}])
+
+    def test_extra_tools_in_the_privileged_plan_are_checked(self):
+        subject = load_subject()
+        plan = subject.DeploymentPlan(Path("/t"), Path("/boot/EFI/refind"), (),
+                                      tools=(("/usr/share/efi-shell-x64/shellx64.efi", "shellx64.efi"),))
+        again = subject.deployment_plan_from_json(subject.deployment_plan_to_json(plan), validate=False)
+        self.assertEqual(again.tools, plan.tools)
+        for source, dest in (("/etc/shadow.efi", "shellx64.efi"), ("/usr/share/x/../../etc/a.efi", "shellx64.efi"),
+                             ("/usr/share/a.efi", "../../refind_x64.efi"), ("/usr/share/a.txt", "memtest86.efi")):
+            bad = subject.deployment_plan_to_json(plan).replace(
+                '"/usr/share/efi-shell-x64/shellx64.efi"', json.dumps(source)).replace(
+                '"shellx64.efi"', json.dumps(dest))
+            with self.assertRaises(subject.ThemeError, msg=(source, dest)):
+                subject.deployment_plan_from_json(bad, validate=False)
+
+    def test_finds_refind_installed_as_fallback_loader(self):
+        """refind-install upgrades a rEFInd found in EFI/BOOT instead of creating EFI/refind."""
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = Path(raw)
+            boot = esp / "EFI" / "BOOT"
+            boot.mkdir(parents=True)
+            (boot / "BOOTX64.EFI").write_bytes(b"MZ")
+            other = esp / "EFI" / "other"
+            other.mkdir()
+            (other / "BOOTX64.EFI").write_bytes(b"MZ")
+            (other / "refind.conf").write_text("", encoding="utf-8")
+            with patch.object(subject.os, "geteuid", return_value=0, create=True):
+                with self.assertRaises(subject.ThemeError):      # a plain fallback loader is not rEFInd
+                    subject.find_refind_dir(None, (esp / "EFI" / "refind", boot, other))
+                (boot / "refind.conf").write_text("timeout 5\n", encoding="utf-8")
+                self.assertEqual(subject.find_refind_dir(None, (esp / "EFI" / "refind", boot)), boot.resolve())
+                proper = esp / "EFI" / "refind"
+                proper.mkdir()
+                (proper / "refind.conf").write_text("", encoding="utf-8")
+                (proper / "refind_x64.efi").write_bytes(b"MZ")
+                self.assertEqual(subject.find_refind_dir(None, (proper, boot)), proper.resolve())
+            entry = subject.BootEntry("0001", "x", "p", "/vmlinuz", mount_points=("/boot",))
+            candidates = subject._refind_candidates([entry])
+            self.assertLess(candidates.index(Path("/boot/EFI/refind")), candidates.index(Path("/boot/EFI/BOOT")))
+
+    def test_three_windows_choice_never_pairs_a_system_with_itself(self):
+        subject = load_subject()
+        wins = [subject.BootEntry(f"000{i}", "Windows Boot Manager", str(i),
+                                  r"\EFI\Microsoft\Boot\bootmgfw.efi") for i in range(3)]
+        roles = subject.assign_boot_roles(wins, choose_dev=lambda options: 2, non_interactive=False)
+        self.assertIs(roles["win_dev"], wins[2])
+        self.assertIsNot(roles["win_game"], wins[2])
+
+
+class CardNumberTests(unittest.TestCase):
+    @staticmethod
+    def make_card(subject, text="03", colour=(255, 255, 255)):
+        card = Image.new("RGB", (512, 512), (2, 2, 2))
+        draw = ImageDraw.Draw(card)
+        draw.rectangle((20, 20, 491, 491), outline=(240, 240, 240), width=3)
+        draw.text((60, 40), "WINDOWS // DEV", font=subject.find_font(None, 22), fill=(230, 230, 230))
+        draw.text((48, 440), text, font=subject.find_font(None, 22), fill=colour)
+        draw.line((90, 458, 130, 458), fill=(200, 200, 200), width=2)  # the dashes
+        return card
+
+    def bright_pixels(self, image, box):
+        raw = image.convert("RGB").crop(box).tobytes()
+        return sum(1 for i in range(0, len(raw), 3) if max(raw[i:i + 3]) > 150)
+
+    def test_detects_number_in_bottom_left(self):
+        subject = load_subject()
+        info = subject.detect_card_number(self.make_card(subject, colour=(255, 0, 60)))
+        self.assertIsNotNone(info)
+        x0, y0, x1, y1 = (round(v * 512) for v in info.box)
+        self.assertTrue(40 <= x0 <= 56 and 430 <= y0 <= 452 and x1 < 90 and y1 <= 466, info.box)
+        self.assertEqual(info.colour, (255, 0, 60))
+
+    def test_erases_or_redraws_number_and_keeps_the_rest(self):
+        subject = load_subject()
+        card = self.make_card(subject)
+        info = subject.detect_card_number(card)
+        blank = subject.apply_card_number(card, info, None)
+        self.assertEqual(self.bright_pixels(blank, (40, 425, 88, 470)), 0)
+        self.assertGreater(self.bright_pixels(blank, (90, 455, 131, 461)), 30)   # dashes stay
+        self.assertGreater(self.bright_pixels(blank, (0, 0, 512, 100)), 100)     # header stays
+        renumbered = subject.apply_card_number(card, info, 7)
+        again = subject.detect_card_number(renumbered)
+        self.assertIsNotNone(again)
+        self.assertAlmostEqual(again.box[0], info.box[0], delta=0.02)
+        self.assertAlmostEqual(again.box[3], info.box[3], delta=0.02)
+
+    def test_card_without_number_is_left_alone(self):
+        subject = load_subject()
+        card = Image.new("RGB", (256, 256), (0, 0, 0))
+        self.assertIsNone(subject.detect_card_number(card))
+        self.assertIs(subject.apply_card_number(card, None, 3), card)
+
+    def test_numbering_order(self):
+        subject = load_subject()
+        options = subject.default_options()
+        # Linux-only PC: its card gets 01
+        self.assertEqual(subject.card_numbers(options, ("linux",))["linux"], 1)
+        # author's PC: two Windows installs + CachyOS -> 01 / 02 / 03 as painted
+        numbers = subject.card_numbers(options, ("win_dev", "win_game", "cachyos"))
+        self.assertEqual((numbers["win_dev"], numbers["win_game"], numbers["cachyos"]), (1, 2, 3))
+        # menu entries come first
+        options["entries"] = ({"label": "Arch", "card": "arch", "loader": "\\vmlinuz-linux",
+                               "volume": "", "options": "", "disabled": False},)
+        self.assertEqual(subject.card_numbers(options, ("cachyos",))["arch"], 1)
+        # custom order: cards left out get no number
+        options["cards.order"] = ("cachyos", "win_game")
+        self.assertEqual(subject.card_numbers(options, ()), {"cachyos": 1, "win_game": 2})
+        options["cards.numbers"] = False
+        self.assertEqual(subject.card_numbers(options, ()), {})
+
+    def test_order_option_validation(self):
+        subject = load_subject()
+        options, errors, _ = subject.validate_options({"cards": {"order": ["linux", "cachyos"]}})
+        self.assertEqual(errors, [])
+        self.assertEqual(options["cards.order"], ("linux", "cachyos"))
+        for bad in (["linux", "linux"], ["beos"], "linux"):
+            _, errors, _ = subject.validate_options({"cards": {"order": bad}})
+            self.assertEqual(len(errors), 1, bad)
+
+
+class RowOptionsTests(unittest.TestCase):
+    def test_visible_tiles_sizes_the_os_row_like_refind_does(self):
+        subject = load_subject()
+        options = subject.default_options()
+        for resolution in (subject.Resolution(3840, 2160), subject.Resolution(1920, 1080)):
+            self.assertEqual(subject.visible_tiles(options, resolution), 3)      # auto
+            for wanted in (2, 3, 4, 5, 6):
+                options["layout.visible_tiles"] = wanted
+                big, _ = subject.icon_geometry(options, resolution)
+                # rEFInd menu.c: MaxVisible = UGAWidth / (TileSize + 8) - 1
+                self.assertEqual(resolution.width // (big + 8) - 1, wanted, (resolution, wanted))
+            options["layout.visible_tiles"] = 0
+
+    def test_scroll_arrows_hidden_by_default_and_old_configs_migrate(self):
+        subject = load_subject()
+        conf = subject.render_theme_conf(subject.default_options(), subject.Resolution(1920, 1080))
+        self.assertIn("arrows", next(l for l in conf.splitlines() if l.startswith("hideui")))
+        options, errors, _ = subject.validate_options({"layout": {"scroll_arrows": True},
+                                                       "refind": {"hideui": ["arrows", "hints"]}})
+        self.assertEqual(errors, [])
+        conf = subject.render_theme_conf(options, subject.Resolution(1920, 1080))
+        self.assertEqual(next(l for l in conf.splitlines() if l.startswith("hideui")), "hideui hints")
+
+    def test_max_tools_keeps_the_most_important_ones(self):
+        subject = load_subject()
+        options = subject.default_options()
+        options["refind.max_tools"] = 5
+        self.assertEqual(subject.shown_tools(options), ("firmware", "reboot", "shutdown", "shell", "memtest"))
+        conf = subject.render_theme_conf(options, subject.Resolution(1920, 1080))
+        self.assertIn("showtools firmware, reboot, shutdown, shell, memtest", conf)
+
+
+class ToolCardTests(unittest.TestCase):
+    def test_every_tool_gets_the_same_frame_to_the_pixel(self):
+        subject = load_subject()
+        cards = []
+        for size, frame, glyph in ((900, (60, 80, 840, 820), (300, 300, 600, 600)),
+                                   (1024, (10, 10, 1013, 1013), (100, 400, 900, 600)),
+                                   (700, (150, 90, 610, 640), (250, 200, 450, 500))):
+            art = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+            draw = ImageDraw.Draw(art)
+            draw.rectangle(frame, outline=(250, 250, 250, 255), width=size // 90)   # the artwork's own frame
+            draw.ellipse(glyph, fill=(255, 0, 60, 255))
+            cards.append(subject.tool_card(art, 240))
+        band = int(240 * subject.TOOL_FRAME["band"]) - 3
+        mask = Image.new("L", (240, 240), 255)
+        ImageDraw.Draw(mask).rectangle((band, band, 239 - band, 239 - band), fill=0)
+        frames = [Image.composite(c, Image.new("RGBA", c.size), mask).tobytes() for c in cards]
+        self.assertTrue(all(f == frames[0] for f in frames))
+        self.assertTrue(all(c.size == (240, 240) for c in cards))
+        self.assertNotEqual(cards[0].tobytes(), cards[1].tobytes())   # the glyph itself is kept
+
+
+class SkinTests(unittest.TestCase):
+    def test_parse_hex_color(self):
+        subject = load_subject()
+        self.assertEqual(subject.parse_hex_color("#A020F0"), (160, 32, 240))
+        with self.assertRaises(subject.ThemeError):
+            subject.parse_hex_color("violet")
+
+    def test_load_skin_reads_config_and_art(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            skins = Path(raw)
+            (skins / "demo").mkdir()
+            (skins / "demo" / "theme.json").write_text(
+                json.dumps({"accent": "#2BB8FF", "title": "DEMO", "art_brightness": 0.5}),
+                encoding="utf-8",
+            )
+            Image.new("RGB", (32, 18)).save(skins / "demo" / "art.png")
+            skin = subject.load_skin("demo", skins)
+            self.assertEqual(skin.accent, (43, 184, 255))
+            self.assertEqual(skin.title, "DEMO")
+            self.assertEqual(skin.art_brightness, 0.5)
+            self.assertEqual(subject.list_skins(skins), ["demo"])
+            with self.assertRaises(subject.ThemeError):
+                subject.load_skin("missing", skins)
+
+    def test_recolor_accent_moves_red_but_keeps_white_and_alpha(self):
+        subject = load_subject()
+        image = Image.new("RGBA", (2, 1))
+        image.putpixel((0, 0), (255, 0, 60, 128))
+        image.putpixel((1, 0), (240, 240, 240, 255))
+        result = subject.recolor_accent(image, (124, 255, 58))
+        red_r, red_g, red_b, red_a = result.getpixel((0, 0))
+        self.assertGreater(red_g, red_r)
+        self.assertEqual(red_a, 128)
+        self.assertEqual(result.getpixel((1, 0)), (240, 240, 240, 255))
 
 
 if __name__ == "__main__":

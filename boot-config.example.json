@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "theme": "night-city",
+  "hud": {
+    "hardware_lines": [
+      "cpu",
+      "ram",
+      "gpu"
+    ],
+    "custom_lines": [
+      "Dismonder // workstation"
+    ]
+  },
+  "cards": {
+    "numbers": true,
+    "order": [
+      "win_dev",
+      "win_game",
+      "cachyos"
+    ]
+  },
+  "refind": {
+    "timeout": 5,
+    "default_selection": "+",
+    "enable_mouse": true
+  },
+  "entries": [
+    {
+      "label": "Windows 11 Gaming",
+      "card": "win_game",
+      "loader": "\\EFI\\Microsoft\\Boot\\bootmgfw.efi",
+      "volume": "PARTUUID-of-the-gaming-disk",
+      "options": "",
+      "disabled": false
+    }
+  ]
+}
