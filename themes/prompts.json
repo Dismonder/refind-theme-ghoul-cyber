@@ -1,0 +1,47 @@
+{
+  "template": "Create an image: 16:9 landscape wallpaper, highest resolution available. Purpose: background of a 4K OLED boot-manager screen. STRICT LAYOUT: pure black #000000 fills at least 80% of the frame. The whole center, the top-left area and the bottom strip must be completely empty pure black (UI cards and text are drawn there). Artwork ONLY in two places: a large piece in the top-right corner (at most the right 30% of the width and the top 45% of the height) and a smaller piece in the bottom-left corner (at most the left 25% of the width and the bottom 35% of the height). Both pieces dissolve into pure black with ragged ink edges. Style: dark anime / manga ink illustration, white and grey linework with heavy hatching, subtle glitch scanlines, ONE glowing accent color: {accent}. Theme: {theme}. Top-right: {top_right}. Bottom-left: {bottom_left}. Original characters only. Absolutely no text, letters, runes, logos, watermarks, frames or UI elements; no fruit or food.",
+  "themes": {
+    "cursed-domain": {
+      "accent": "electric violet #A020F0",
+      "theme": "occult sorcery battle-shonen anime, cursed energy and domain expansion",
+      "top_right": "a sorcerer's bandaged hands forming a secret finger seal, surrounded by swirling violet cursed energy and a spiral void",
+      "bottom_left": "a cracked shrine torii gate with torn blank paper talismans"
+    },
+    "chainsaw-devil": {
+      "accent": "hot orange #FF6A00",
+      "theme": "gritty devil-hunter anime, chainsaw devils, blood-splatter ink, urban horror",
+      "top_right": "a snarling devil head with chainsaw blades bursting from its skull, orange sparks flying",
+      "bottom_left": "a torn devil-hunter tie and a revving chainsaw chain lying in ink splatter"
+    },
+    "demon-blade": {
+      "accent": "cyan blue #2BB8FF",
+      "theme": "Taisho-era demon-slayer swordsman anime, breathing-style sword techniques, ukiyo-e waves",
+      "top_right": "a katana slash unleashing a huge ukiyo-e style water dragon wave, glowing cyan",
+      "bottom_left": "falling wisteria petals and a checkered haori sleeve over a sword guard"
+    },
+    "titan-fall": {
+      "accent": "amber #FFB21A",
+      "theme": "dark military fantasy anime, colossal man-eating giants beyond enormous stone walls",
+      "top_right": "a colossal skinless giant's face peering over a massive stone wall, steam rising, amber glowing eyes",
+      "bottom_left": "a soldier silhouette with twin blades and grappling cables launching upward, green cloak"
+    },
+    "mecha-unit": {
+      "accent": "toxic neon green #7CFF3A",
+      "theme": "90s apocalyptic mecha anime, biomechanical giant robots, angels, hexagonal warning HUDs",
+      "top_right": "a biomechanical giant mecha head with a single horn and glowing green eyes, cables and armor plates",
+      "bottom_left": "hexagonal warning grid and a cross-shaped energy explosion on the horizon"
+    },
+    "neon-ronin": {
+      "accent": "neon magenta #FF2E97",
+      "theme": "cyberpunk ronin samurai in a neon rain city",
+      "top_right": "a cyber samurai wearing a cracked oni mask, rain streaks, holographic katana glowing magenta",
+      "bottom_left": "a rainy neon alley rooftop with hanging cables and a lone cat silhouette"
+    },
+    "void-horizon": {
+      "accent": "warm gold #FFC24B",
+      "theme": "minimal cosmic horror space, black hole event horizon, lone astronaut",
+      "top_right": "a black hole with a thin glowing golden accretion ring and gravitational lensing",
+      "bottom_left": "a tiny lone astronaut standing on a rocky asteroid edge looking up"
+    }
+  }
+}
