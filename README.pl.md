@@ -177,22 +177,11 @@ include themes/ghoul-cyber/theme.conf
 
 ## 🖥️ Theme Studio — własny ekran startowy w kilka chwil
 
-`theme_studio.py` zamienia instalator w aplikację: wybierasz motyw, dopasowujesz go z **podglądem na żywo** i budujesz albo instalujesz jednym kliknięciem.
+**Theme Studio** — aplikacja, w której wybierasz motyw, dopasowujesz go z **podglądem na żywo** i budujesz albo instalujesz jednym kliknięciem (polski / angielski, Linux i Windows) — ma własne repozytorium i używa tego jako silnika:
 
-```bash
-python3 theme_studio.py
-```
+### 👉 [Dismonder/ghoul-cyber-theme-studio](https://github.com/Dismonder/ghoul-cyber-theme-studio) · [⬇️ pobierz](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)
 
-- **Motywy** po lewej, po prawej podgląd na żywo końcowego ekranu rEFInd (odświeża się chwilę po każdej zmianie).
-- Zakładka **Instalacja**: **ZBUDUJ** (paczka w `dist/ghoul-cyber`) albo **ZBUDUJ I ZAINSTALUJ** (od razu do rEFInd) oraz **próba na sucho**, która tylko pokazuje, co by się stało. Log na żywo; jeśli instalator zapyta, który Windows to DEV, odpowiadasz w polu pod logiem.
-  - Linux: pyta o hasło sudo we własnym okienku (`SUDO_ASKPASS`).
-  - Windows: prosi o uprawnienia administratora (UAC), sam znajduje partycję EFI, na której naprawdę jest rEFInd (także przy kilku dyskach), nadaje jej tymczasową literę i potem ją usuwa.
-- Zakładki **Układ / Elementy / Zachowanie / Wpisy menu** — wszystkie opcje `boot-config.json` (niżej) jako formularz z opisami.
-- Odporność na błędy: złe wartości są pokazywane na czerwono i blokują budowanie, ostatnie poprawne ustawienia nigdy nie są nadpisywane, a każda awaria podczas instalacji cofa wszystkie pliki (`refind.conf` ma też kopię `.bak` z datą).
-- Ustawienia zapisują się same do `boot-config.json`; **Importuj / Eksportuj** pozwala podzielić się całym wyglądem jako jednym plikiem.
-- **Język:** polski, gdy system jest po polsku, w innym przypadku angielski; przełączysz w każdej chwili przyciskiem **PL | EN** w prawym górnym rogu (wybór jest zapamiętywany). Wymuszenie: `GHOUL_LANG=pl` / `GHOUL_LANG=en`.
-- **Numery kafelków:** *Elementy → Numery na kafelkach systemów / Kolejność numerów* — automatycznie (najpierw Twoje wpisy menu, potem systemy wykryte na tym komputerze), własna kolejność albo bez numerów.
-- Wymaga Tk: `sudo pacman -S tk` (Arch/CachyOS), `sudo apt install python3-tk` (Debian/Ubuntu), `sudo dnf install python3-tkinter` (Fedora), `sudo zypper install python3-tk` (openSUSE). Bez Tk uruchamia się menu tekstowe.
+Wszystko, co robi, jest też dostępne z wiersza poleceń tego repozytorium (`build_and_deploy_theme.py`, ustawienia w `boot-config.json` — niżej).
 
 ---
 
@@ -292,7 +281,7 @@ Projekt posiada zestaw testów jednostkowych pokrywających kontrakt budowania, 
 python3 -m pytest tests
 ```
 
-`tests/test_robustness.py` to losowy test obciążeniowy („fuzzing”): śmieciowe ustawienia, uszkodzone pliki JSON i obrazy, nietypowe wyjście `efibootmgr` / `lsblk` / PowerShella, losowe wpisywanie w Theme Studio. Każdy przypadek musi albo zadziałać, albo zatrzymać się z czytelnym komunikatem. Mocniejsza wersja i odtworzenie błędu po ziarnie:
+`tests/test_robustness.py` to losowy test obciążeniowy („fuzzing”): śmieciowe ustawienia, uszkodzone pliki JSON i obrazy, nietypowe wyjście `efibootmgr` / `lsblk` / PowerShella. Każdy przypadek musi albo zadziałać, albo zatrzymać się z czytelnym komunikatem. Mocniejsza wersja i odtworzenie błędu po ziarnie:
 
 ```bash
 FUZZ_ROUNDS=500 FUZZ_SEED=1234 python3 -m pytest tests/test_robustness.py

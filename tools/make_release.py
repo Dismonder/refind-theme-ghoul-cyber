@@ -4,7 +4,7 @@
     python3 tools/make_release.py --version v2.0.0
 
 Produces:
-  refind-theme-ghoul-cyber-<version>.zip   installer + Theme Studio + all themes (git archive)
+  refind-theme-ghoul-cyber-<version>.zip   installer + all themes (git archive)
   ghoul-cyber-<version>-<theme>-<res>.zip  ready-made theme for manual install, one per theme
                                            and resolution (4k, 1440p, 1080p)
   SHA256SUMS.txt

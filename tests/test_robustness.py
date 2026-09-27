@@ -372,53 +372,5 @@ class RobustnessTests(unittest.TestCase):
                 self.assertEqual(image.width in (320, 640, 1280), True)
 
 
-class StudioMonkeyTests(unittest.TestCase):
-    """Random typing into every Theme Studio field: no crash, no broken save."""
-
-    def test_random_input_never_breaks_the_studio(self):
-        try:
-            import tkinter as tk
-            root = tk.Tk()
-        except Exception as exc:  # noqa: BLE001 - no display
-            self.skipTest(f"no Tk display: {exc}")
-        root.withdraw()
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        import theme_studio as ts
-        subject = load_subject()
-        rng = random.Random(f"{SEED}-studio")
-        crashes: list[str] = []
-        root.report_callback_exception = lambda *exc: crashes.append(repr(exc[1]))
-        with tempfile.TemporaryDirectory() as raw:
-            old_config = ts.CONFIG_PATH
-            ts.CONFIG_PATH = Path(raw) / "boot-config.json"
-            try:
-                studio = ts.Studio(root, ts.load_themes(), subject)
-                specs = {spec.key: spec for spec in subject.OPTION_SPECS}
-                typed = NASTY_TEXT + ["-5", "1e999", "nan", "inf", "0", "3,5", "600", "", "abc", "12345678901234567890"]
-                for i in range(ROUNDS * 8):
-                    key = rng.choice(list(studio.fields))
-                    spec, field = specs[key], studio.fields[key]
-                    if spec.kind in {"int", "float", "text", "color", "choice"}:
-                        value = rng.choice(typed)
-                    elif spec.kind == "bool":
-                        value = rng.choice([True, False])
-                    elif spec.kind in {"multi", "order"}:
-                        value = tuple(c for c in spec.choices if rng.random() < 0.5)
-                    elif spec.kind == "lines":
-                        value = tuple(rng.choice(typed) for _ in range(rng.randrange(0, 6)))
-                    else:
-                        continue
-                    with self.subTest(case=i, key=key, value=repr(value)[:60], seed=SEED):
-                        field["set"](value)
-                        studio.on_change()
-                        root.update()
-                        if not studio.errors and ts.CONFIG_PATH.exists():
-                            self.assertEqual(subject.load_options(ts.CONFIG_PATH, strict=False), studio.options)
-            finally:
-                ts.CONFIG_PATH = old_config
-                root.destroy()
-        self.assertEqual(crashes, [])
-
-
 if __name__ == "__main__":
     unittest.main()

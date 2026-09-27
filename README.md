@@ -177,22 +177,11 @@ include themes/ghoul-cyber/theme.conf
 
 ## 🖥️ Theme Studio — build your own boot screen
 
-`theme_studio.py` turns the installer into a small app: pick a theme, tune it with a **live preview**, then build or install it in one click.
+**Theme Studio** — the app that lets you pick a theme, tune it with a **live preview** and build or install it in one click (Polish / English, Linux and Windows) — lives in its own repository and uses this one as its engine:
 
-```bash
-python3 theme_studio.py
-```
+### 👉 [Dismonder/ghoul-cyber-theme-studio](https://github.com/Dismonder/ghoul-cyber-theme-studio) · [⬇️ download](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)
 
-- **Themes** on the left, a live preview of the final rEFInd screen on the right (it redraws a moment after every change).
-- **Install** tab: **BUILD** (package in `dist/ghoul-cyber`) or **BUILD & INSTALL** (straight into rEFInd), plus **dry run** that only shows what would happen. Live log; if the installer asks which Windows is DEV, answer in the field under the log.
-  - Linux: asks for your sudo password in its own dialog (`SUDO_ASKPASS`).
-  - Windows: asks for administrator rights (UAC), finds the EFI partition that really holds rEFInd (also on multi-disk PCs), gives it a temporary drive letter and removes it afterwards.
-- **Layout / Elements / Behaviour / Menu entries** tabs — every option of `boot-config.json` (below) as a form with explanations.
-- Fail-safe: invalid values are shown in red and block building, the last valid settings are never overwritten, and any failure while installing rolls every file back (`refind.conf` also keeps a timestamped `.bak`).
-- Settings are saved automatically to `boot-config.json`; **Import / Export** lets you share a whole look as one file.
-- **Language:** English, or Polish when your system language is Polish; switch any time with **PL | EN** in the top-right corner (the choice is remembered). Force it with `GHOUL_LANG=en` / `GHOUL_LANG=pl`.
-- **Tile numbers:** *Elements → Numbers on system tiles / Number order* — automatic (your menu entries first, then the systems found on this PC), your own order, or no numbers at all.
-- Needs Tk: `sudo pacman -S tk` (Arch/CachyOS), `sudo apt install python3-tk` (Debian/Ubuntu), `sudo dnf install python3-tkinter` (Fedora), `sudo zypper install python3-tk` (openSUSE). Without Tk it falls back to a text menu.
+Everything it does is also available from the command line of this repository (`build_and_deploy_theme.py`, settings in `boot-config.json` — below).
 
 ---
 
@@ -292,7 +281,7 @@ The project ships with unit tests covering the build contract, asset geometry, t
 python3 -m pytest tests
 ```
 
-`tests/test_robustness.py` is a randomised stress test ("fuzzing"): garbage settings, broken JSON and images, odd `efibootmgr` / `lsblk` / PowerShell output, random input typed into Theme Studio. Every case must either work or stop with a clear message. Make it heavier and replay a failure by its seed:
+`tests/test_robustness.py` is a randomised stress test ("fuzzing"): garbage settings, broken JSON and images, odd `efibootmgr` / `lsblk` / PowerShell output. Every case must either work or stop with a clear message. Make it heavier and replay a failure by its seed:
 
 ```bash
 FUZZ_ROUNDS=500 FUZZ_SEED=1234 python3 -m pytest tests/test_robustness.py
