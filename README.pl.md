@@ -6,6 +6,9 @@
 
 [![GitHub Releases](https://img.shields.io/badge/GitHub-Releases-blue?style=for-the-badge&logo=github)](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases)
 [![Licencja](https://img.shields.io/badge/Licencja-GCPL--1.0-orange?style=for-the-badge)](LICENSE)
+[![Theme Studio](https://img.shields.io/badge/Aplikacja-Theme%20Studio-FF003C?style=for-the-badge&logo=github)](https://github.com/Dismonder/ghoul-cyber-theme-studio)
+
+> 🖥️ **Nowość: [Ghoul Cyber – Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio)** — aplikacja do tego motywu. Wybierz jeden z 18 motywów, dopasuj go z podglądem na żywo i zbuduj albo zainstaluj jednym kliknięciem, na Linuksie i Windowsie. **[⬇️ Pobierz](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**
 
 ![Ghoul Cyber Preview](full_bootloader_preview_1080p.png)
 
