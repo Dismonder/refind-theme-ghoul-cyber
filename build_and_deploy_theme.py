@@ -2443,6 +2443,14 @@ PREVIEW_TOOL_ICONS = {
     "apple_recovery": "tool_apple_rescue", "windows_recovery": "tool_windows_rescue",
     "csr_rotate": "func_csr_rotate",
 }
+# rEFInd tool -> ai_icons/<name> artwork (what build_theme uses for it)
+PREVIEW_TOOL_ART = {
+    "reboot": "reboot", "about": "about", "exit": "exit", "bootorder": "bootorder",
+    "hidden_tags": "hidden", "shell": "shell", "memtest": "memtest", "gdisk": "part",
+    "gptsync": "part", "netboot": "netboot", "mok_tool": "mok", "fwupdate": "fwupdate",
+    "install": "install", "apple_recovery": "rescue", "windows_recovery": "rescue",
+    "csr_rotate": "csr_rotate",
+}
 PREVIEW_ALWAYS_TOOLS = ("firmware", "reboot", "shutdown", "about", "exit", "bootorder", "hidden_tags")
 _PREVIEW_CACHE: dict[tuple, object] = {}
 
@@ -2547,13 +2555,10 @@ def render_preview(
         arrow_px = small_px
         # the row starts unscrolled, so rEFInd shows only the right arrow
         for name, x in (("arrow_right", left + pitch * (len(cards) - 1) + big_px / 2 + arrow_px * 0.1),):
-            path = source_dir / "dist" / THEME_NAME / "icons" / f"{name}.png"
-            arrow = (Image.open(path).convert("RGBA").resize((arrow_px, arrow_px), Image.Resampling.LANCZOS)
-                     if path.is_file() else render_cyber_icon(arrow_px, name))
+            arrow = render_cyber_icon(arrow_px, name)   # as in the build
             canvas.alpha_composite(tint(arrow), (round(x), round(row_y - arrow_px / 2)))
     tools = [t for t in shown_tools(options)
              if t in PREVIEW_ALWAYS_TOOLS or t in options["refind.extra_tools"]]
-    dist_icons = source_dir / "dist" / THEME_NAME / "icons"
     tool_pitch = small_px * 1.37
     tool_left = (preview.width - tool_pitch * (len(tools) - 1)) / 2
     for index, tool in enumerate(tools):
@@ -2564,13 +2569,12 @@ def render_preview(
                 _PREVIEW_CACHE[key] = tool_card(open_rgba(path), small_px)
             icon = _PREVIEW_CACHE[key]
         else:
-            path = dist_icons / f"{PREVIEW_TOOL_ICONS[tool]}.png"
+            # the same artwork and shared frame as the build, never a stale dist/ copy
             key = ("tool", tool, small_px)
             if key not in _PREVIEW_CACHE:
-                _PREVIEW_CACHE[key] = (
-                    Image.open(path).convert("RGBA").resize((small_px, small_px), Image.Resampling.LANCZOS)
-                    if path.is_file() else render_reboot_icon(small_px)
-                )
+                art = load_ai_icon(PREVIEW_TOOL_ART.get(tool, tool), small_px)
+                _PREVIEW_CACHE[key] = (tool_card(art, small_px) if art is not None
+                                       else render_cyber_icon(small_px, PREVIEW_TOOL_ART.get(tool, tool)))
             icon = _PREVIEW_CACHE[key]
         cx = tool_left + index * tool_pitch
         canvas.alpha_composite(tint(icon), (round(cx - small_px / 2), round(preview.height * 0.78 - small_px / 2)))
