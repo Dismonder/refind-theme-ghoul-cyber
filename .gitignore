@@ -28,3 +28,7 @@ temp_*
 render_*.py
 
 
+
+# personal Theme Studio / installer settings
+boot-config.json
+studio-settings.json
