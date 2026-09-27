@@ -1,0 +1,3 @@
+# Kept in the repository, left out of release archives (git archive)
+ai_icons/legacy export-ignore
+themes/*/card_linux_gnu.png export-ignore
