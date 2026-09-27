@@ -5,5 +5,6 @@
   "title": "FROST_MAGE_v1.0",
   "kanji": "氷魔核",
   "tagline": "[ SPELL :: ETERNAL_FROST ]",
-  "art_brightness": 0.85
+  "art_brightness": 0.85,
+  "fan_art": true
 }

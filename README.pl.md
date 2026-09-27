@@ -227,6 +227,8 @@ Każda wartość jest sprawdzana (typ, zakres, dozwolone znaki), zanim cokolwiek
 
 Oprócz oryginalnego Ghoul Cyber w repozytorium jest siedemnaście wariantów OLED inspirowanych anime i grami. Każdy ma własną grafikę AI, własne kafelki systemów i własny kolor akcentu. Instalator, telemetria i układ rEFInd są wspólne, a motyw zawsze instaluje się jako `themes/ghoul-cyber`.
 
+> 🎭 **Fan art.** Tych siedemnaście motywów to nieoficjalny, niekomercyjny fan art inspirowany popularnymi anime i grami — niepowiązany z twórcami ani właścicielami praw i niewspierany przez nich; wszystkie postacie i znaki towarowe należą do ich właścicieli. Theme Studio oznacza je jako *FAN ART*. Właściciele praw mogą poprosić o usunięcie przez zgłoszenie (issue) — zobacz [`themes/FAN-ART.md`](themes/FAN-ART.md).
+
 | Motyw | Akcent | Klimat |
 | :--- | :--- | :--- |
 | `cursed-domain` | fiolet `#A020F0` | okultystyczna magia, przeklęta energia, zniszczone torii |

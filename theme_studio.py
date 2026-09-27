@@ -92,7 +92,7 @@ def load_themes() -> list[ThemeInfo]:
                 ThemeInfo(
                     folder.name,
                     str(config.get("name", folder.name)),
-                    str(config.get("description", "")),
+                    ("FAN ART · " if config.get("fan_art") else "") + str(config.get("description", "")),
                     str(config.get("accent", "#FF003C")),
                     preview if preview.is_file() else None,
                 )

@@ -5,5 +5,6 @@
   "title": "TITAN_WALL_v1.0",
   "kanji": "巨人壁",
   "tagline": "[ WALL :: 50m // BREACH ]",
-  "art_brightness": 0.62
+  "art_brightness": 0.62,
+  "fan_art": true
 }
