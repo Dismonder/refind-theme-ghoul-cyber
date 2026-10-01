@@ -791,6 +791,288 @@ class WindowsInstallTests(unittest.TestCase):
         self.assertEqual(subject.list_windows_esps(runner), [(0, 1, ""), (2, 1, "S")])
 
 
+# bcdedit /enum firmware /v on a Polish Windows: field names are translated.
+BCD_FIRMWARE = (
+    "Menedżer rozruchu oprogramowania układowego\r\n"
+    "--------------------------------------------\r\n"
+    "identyfikator           {a5a30fa2-3d06-4e9f-b5f4-a01df9d1fcba}\r\n"
+    "displayorder            {9dea862c-5cdd-4e70-acc1-f32b344d4795}\r\n"
+    "                        {11111111-2222-3333-4444-555555555555}\r\n"
+    "limit czasu             0\r\n"
+    "\r\n"
+    "Menedżer rozruchu systemu Windows\r\n"
+    "---------------------------------\r\n"
+    "identyfikator           {9dea862c-5cdd-4e70-acc1-f32b344d4795}\r\n"
+    "urządzenie              partition=\\Device\\HarddiskVolume1\r\n"
+    "ścieżka                 \\EFI\\Microsoft\\Boot\\bootmgfw.efi\r\n"
+    "opis                    Windows Boot Manager\r\n"
+    "\r\n"
+    "Aplikacja oprogramowania układowego (101fffff)\r\n"
+    "----------------------------------------------\r\n"
+    "identyfikator           {11111111-2222-3333-4444-555555555555}\r\n"
+    "urządzenie              partition=\\Device\\HarddiskVolume1\r\n"
+    "ścieżka                 \\EFI\\refind\\refind_x64.efi\r\n"
+    "opis                    rEFInd\r\n"
+)
+NEW_ENTRY = "{abcdef01-2345-6789-abcd-ef0123456789}"
+
+
+class WindowsRefindInstallTests(unittest.TestCase):
+    """rEFInd itself on a PC with only Windows - every system call is faked."""
+
+    def _zip(self, arch: str = "x64") -> bytes:
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            base = "refind-bin-0.14.2/refind/"
+            archive.writestr(base + f"refind_{arch}.efi", b"EFI-BINARY")
+            archive.writestr(base + "refind_ia32.efi", b"OTHER-ARCH")
+            archive.writestr(base + "refind.conf-sample", b"timeout 20\n")
+            archive.writestr(base + "icons/os_win.png", b"PNG")
+            archive.writestr(base + "icons/../../escape.png", b"BAD")
+            archive.writestr("refind-bin-0.14.2/refind-install", b"#!/bin/sh")
+        return buffer.getvalue()
+
+    def _esp(self, root: Path, *, windows: bool = True) -> Path:
+        esp = root / "esp"
+        (esp / "EFI" / "Microsoft" / "Boot").mkdir(parents=True)
+        if windows:
+            (esp / "EFI" / "Microsoft" / "Boot" / "bootmgfw.efi").write_bytes(b"MS")
+        return esp
+
+    def _runner(self, listing: str = "", *, bitlocker: str = "paused", fail_on: str | None = None):
+        calls: list[tuple[str, ...]] = []
+        subject_process = __import__("subprocess")
+
+        def runner(command):
+            command = tuple(command)
+            calls.append(command)
+            if command[0] == "powershell":
+                return subject_process.CompletedProcess(command, 0, f"{bitlocker}\r\n", "")
+            args = command[1:]
+            if fail_on is not None and fail_on in args:
+                return subject_process.CompletedProcess(command, 1, "", "Odmowa dostępu.")
+            if args[:2] == ("/enum", "firmware"):
+                return subject_process.CompletedProcess(command, 0, listing, "")
+            if args[:1] == ("/copy",):
+                return subject_process.CompletedProcess(
+                    command, 0, f"Wpis został pomyślnie skopiowany do {NEW_ENTRY}.\r\n", "")
+            return subject_process.CompletedProcess(command, 0, "Operacja ukończona pomyślnie.\r\n", "")
+
+        return runner, calls
+
+    def _ready(self, subject, data: bytes | None = None):
+        return (
+            patch.object(subject, "windows_firmware_is_uefi", return_value=True),
+            patch.object(subject, "windows_secure_boot_enabled", return_value=False),
+            patch.object(subject, "windows_efi_arch", return_value="x64"),
+            patch.object(subject, "fetch_refind_zip", return_value=data or self._zip()),
+        )
+
+    @staticmethod
+    def _bcd(calls):
+        return [c[1:] for c in calls if c[0].casefold().endswith("bcdedit.exe")]
+
+    def test_parses_translated_bcdedit_by_guid_and_path(self):
+        subject = load_subject()
+        self.assertEqual(subject.find_firmware_entry(BCD_FIRMWARE, r"\EFI\refind\refind_x64.efi"),
+                         "{11111111-2222-3333-4444-555555555555}")
+        self.assertEqual(subject.find_firmware_entry(BCD_FIRMWARE, r"\EFI\Microsoft\Boot\bootmgfw.efi"),
+                         "{9dea862c-5cdd-4e70-acc1-f32b344d4795}")
+        self.assertIsNone(subject.find_firmware_entry(BCD_FIRMWARE, r"\EFI\refind\refind_aa64.efi"))
+        self.assertEqual(subject.firmware_display_order(BCD_FIRMWARE),
+                         ["{9dea862c-5cdd-4e70-acc1-f32b344d4795}",
+                          "{11111111-2222-3333-4444-555555555555}"])
+
+    def test_takes_only_the_needed_files_from_the_zip(self):
+        subject = load_subject()
+        files = subject.refind_files_from_zip(self._zip(), "x64")
+        self.assertEqual(sorted(files), ["icons/os_win.png", "refind.conf", "refind_x64.efi"])
+        with self.assertRaises(subject.ThemeError):
+            subject.refind_files_from_zip(self._zip(), "aa64")
+
+    def test_rejects_a_zip_that_is_not_the_official_release(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            fake = Path(raw) / "refind-bin-0.14.2.zip"
+            fake.write_bytes(self._zip())
+            with self.assertRaises(subject.ThemeError) as caught:
+                subject.fetch_refind_zip(fake)
+            self.assertIn("not the official", str(caught.exception))
+
+    def test_arch_follows_the_os_not_the_python_build(self):
+        subject = load_subject()
+        self.assertEqual(subject.windows_efi_arch({"PROCESSOR_ARCHITECTURE": "AMD64"}), "x64")
+        self.assertEqual(subject.windows_efi_arch({"PROCESSOR_ARCHITECTURE": "x86",
+                                                   "PROCESSOR_ARCHITEW6432": "ARM64"}), "aa64")
+
+    def test_installs_refind_as_a_new_first_boot_entry(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            runner, calls = self._runner(BCD_FIRMWARE.replace("refind_x64", "other"))
+            uefi, secure, arch, fetch = self._ready(subject)
+            with uefi, secure, arch, fetch:
+                target = subject.install_refind_windows([esp], runner=runner)
+            self.assertEqual(target, esp / "EFI" / "refind")
+            self.assertEqual((target / "refind_x64.efi").read_bytes(), b"EFI-BINARY")
+            self.assertEqual((target / "refind.conf").read_bytes(), b"timeout 20\n")
+            self.assertTrue((target / "icons" / "os_win.png").is_file())
+            self.assertFalse((target / "refind_ia32.efi").exists())
+            self.assertFalse(any(Path(raw).rglob("escape.png")))
+            marker = json.loads((target / subject.REFIND_MARKER).read_text(encoding="utf-8"))
+            self.assertEqual(marker["loader"], r"\EFI\refind\refind_x64.efi")
+            bitlocker = next(i for i, c in enumerate(calls) if c[0] == "powershell")
+            first_change = next(i for i, c in enumerate(calls) if "/copy" in c)
+            self.assertLess(bitlocker, first_change)
+            self.assertEqual(self._bcd(calls)[1:], [
+                ("/copy", "{bootmgr}", "/d", "rEFInd"),
+                ("/set", NEW_ENTRY, "device", f"partition={target.drive}"),
+                ("/set", NEW_ENTRY, "path", r"\EFI\refind\refind_x64.efi"),
+                ("/set", "{fwbootmgr}", "displayorder", NEW_ENTRY, "/addfirst"),
+            ])
+            self.assertFalse(any("{bootmgr}" in c and "/set" in c for c in self._bcd(calls)))
+
+    def test_failed_boot_entry_removes_everything_it_added(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            runner, calls = self._runner("", fail_on="/addfirst")
+            uefi, secure, arch, fetch = self._ready(subject)
+            with uefi, secure, arch, fetch, self.assertRaises(subject.ThemeError):
+                subject.install_refind_windows([esp], runner=runner)
+            self.assertFalse((esp / "EFI" / "refind").exists())
+            self.assertIn(("/delete", NEW_ENTRY), self._bcd(calls))
+
+    def test_bitlocker_that_cannot_be_paused_stops_before_the_boot_order(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            runner, calls = self._runner("", bitlocker="")
+            uefi, secure, arch, fetch = self._ready(subject)
+            with uefi, secure, arch, fetch, self.assertRaises(subject.ThemeError) as caught:
+                subject.install_refind_windows([esp], runner=runner)
+            self.assertIn("BitLocker", str(caught.exception))
+            self.assertEqual([c[0] for c in self._bcd(calls)], ["/enum"])
+            self.assertFalse((esp / "EFI" / "refind").exists())
+
+    def test_secure_boot_or_legacy_bios_changes_nothing(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            runner, calls = self._runner()
+            for uefi, secure, text in ((True, True, "shutdown /r /fw"), (False, False, "legacy")):
+                with patch.object(subject, "windows_firmware_is_uefi", return_value=uefi), \
+                     patch.object(subject, "windows_secure_boot_enabled", return_value=secure), \
+                     self.assertRaises(subject.ThemeError) as caught:
+                    subject.install_refind_windows([esp], runner=runner)
+                self.assertIn(text, str(caught.exception))
+            # Secure Boot on: only BitLocker is paused, ahead of the firmware change
+            self.assertEqual([c[0] for c in calls], ["powershell"])
+            self.assertIn("DisableKeyProtectors", calls[0][-1])
+            self.assertFalse((esp / "EFI" / "refind").exists())
+
+    def test_never_overwrites_a_folder_it_does_not_own(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            (esp / "EFI" / "refind").mkdir()
+            (esp / "EFI" / "refind" / "notes.txt").write_text("mine")
+            runner, calls = self._runner()
+            uefi, secure, arch, fetch = self._ready(subject)
+            with uefi, secure, arch, fetch, self.assertRaises(subject.ThemeError):
+                subject.install_refind_windows([esp], runner=runner)
+            self.assertEqual((esp / "EFI" / "refind" / "notes.txt").read_text(), "mine")
+            self.assertEqual(calls, [])
+
+    def test_full_esp_is_refused_before_any_change(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            runner, calls = self._runner()
+            uefi, secure, arch, fetch = self._ready(subject)
+            usage = subject.shutil._ntuple_diskusage(100, 99, 1)
+            with uefi, secure, arch, fetch, patch.object(subject.shutil, "disk_usage", return_value=usage), \
+                 self.assertRaises(subject.ThemeError) as caught:
+                subject.install_refind_windows([esp], runner=runner)
+            self.assertIn("MB free", str(caught.exception))
+            self.assertEqual(calls, [])
+
+    def test_rerun_only_puts_rEFInd_first_again(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            refind = Path(raw) / "EFI" / "refind"
+            refind.mkdir(parents=True)
+            (refind / subject.REFIND_MARKER).write_text(json.dumps({"loader": r"\EFI\refind\refind_x64.efi"}))
+            runner, calls = self._runner(BCD_FIRMWARE)
+            subject.ensure_refind_boot_entry(refind, runner=runner)
+            self.assertEqual(self._bcd(calls)[1:], [
+                ("/set", "{fwbootmgr}", "displayorder", "{11111111-2222-3333-4444-555555555555}", "/addfirst"),
+            ])
+            self.assertTrue(any(c[0] == "powershell" for c in calls))
+
+            first = BCD_FIRMWARE.replace(
+                "{9dea862c-5cdd-4e70-acc1-f32b344d4795}\r\n                        {11111111-2222-3333-4444-555555555555}",
+                "{11111111-2222-3333-4444-555555555555}\r\n                        {9dea862c-5cdd-4e70-acc1-f32b344d4795}")
+            runner, calls = self._runner(first)
+            subject.ensure_refind_boot_entry(refind, runner=runner)
+            self.assertEqual(len(self._bcd(calls)), 1)
+            self.assertFalse(any(c[0] == "powershell" for c in calls))
+
+    def test_damaged_marker_is_reported_and_changes_nothing(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            refind = Path(raw)
+            runner, calls = self._runner(BCD_FIRMWARE)
+            for content in ("{}", "not json", json.dumps({"loader": r"\EFI\Microsoft\Boot\bootmgfw.efi"})):
+                (refind / subject.REFIND_MARKER).write_text(content)
+                with self.assertRaises(subject.ThemeError):
+                    subject.ensure_refind_boot_entry(refind, runner=runner)
+            self.assertEqual(calls, [])
+
+    def test_install_theme_installs_rEFInd_first_when_missing(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            theme = WindowsInstallTests._built_theme(self, subject, root)
+            esp = self._esp(root)
+            runner, calls = self._runner("")
+
+            @subject.contextlib.contextmanager
+            def esps(_runner):
+                yield [esp]
+
+            uefi, secure, arch, fetch = self._ready(subject)
+            with uefi, secure, arch, fetch, patch.object(subject, "mounted_windows_esps", esps):
+                refind = subject.install_theme_windows(theme, runner=runner)
+            self.assertEqual(refind.resolve(), (esp / "EFI" / "refind").resolve())
+            self.assertIn(b"include themes/ghoul-cyber/theme.conf", (refind / "refind.conf").read_bytes())
+            self.assertTrue((refind / "themes" / "ghoul-cyber" / "background.png").is_file())
+
+    def test_remove_deletes_only_what_it_installed(self):
+        subject = load_subject()
+        with tempfile.TemporaryDirectory() as raw:
+            esp = self._esp(Path(raw))
+            refind = esp / "EFI" / "refind"
+            refind.mkdir()
+            (refind / subject.REFIND_MARKER).write_text(json.dumps({"loader": r"\EFI\refind\refind_x64.efi"}))
+            runner, calls = self._runner(BCD_FIRMWARE)
+
+            @subject.contextlib.contextmanager
+            def esps(_runner):
+                yield [esp]
+
+            with patch.object(subject, "mounted_windows_esps", esps):
+                subject.remove_refind_windows(runner=runner)
+            self.assertFalse(refind.exists())
+            self.assertTrue((esp / "EFI" / "Microsoft" / "Boot" / "bootmgfw.efi").is_file())
+            self.assertIn(("/delete", "{11111111-2222-3333-4444-555555555555}"), self._bcd(calls))
+            with patch.object(subject, "mounted_windows_esps", esps), self.assertRaises(subject.ThemeError):
+                subject.remove_refind_windows(runner=runner)
+
+
 class DependencyBootstrapTests(unittest.TestCase):
     def test_refreshes_databases_when_they_are_missing(self):
         subject = load_subject()
