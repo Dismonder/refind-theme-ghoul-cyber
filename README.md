@@ -64,7 +64,7 @@ The full, legally binding license text in Polish and English is in the [LICENSE]
   - Support for 1440p (2560×1440), 1080p (1920×1080) and other 16:9 resolutions.
 - **Fully automated installer (`build_and_deploy_theme.py`):**
   - **Linux (any major distribution):** fully automatic — installs missing packages with your package manager, installs rEFInd itself if it is missing (after asking), maps UEFI NVRAM entries to the right boot cards (*Windows DEV*, *Windows Gaming*, *CachyOS* — each only if you have it; Linux-only PCs are fine), installs the assets to `/boot/efi/EFI/refind/themes/ghoul-cyber` and safely updates `refind.conf` (with a transactional backup and rollback).
-  - **Windows:** build-only mode that produces a ready-to-copy package in `dist/ghoul-cyber`.
+  - **Windows:** with `--install` (or one click in Theme Studio) installs the theme — and when the PC has no rEFInd, first downloads it (SHA-256 checked), copies it to the EFI partition and adds it to the boot menu in front of Windows. Without `--install` it builds a ready-to-copy package in `dist/ghoul-cyber`.
 - **Asset generator with live telemetry:**
   - Automatically prints your CPU, RAM, GPU, NVMe drive and Secure Boot status onto the wallpaper.
   - Generates the full set of tool and OS icons (Windows, CachyOS, Linux, Arch, Debian, Ubuntu, Fedora, macOS and more).
@@ -90,6 +90,7 @@ Nothing to do by hand: when rEFInd is not found, the installer asks *"rEFInd is 
 | **Secure Boot is on** | stops with an explanation — an unsigned rEFInd would not start; turn Secure Boot off or install rEFInd with shim/MOK yourself |
 | openSUSE | rEFInd is not in the official repositories — the installer points you to the [official download](https://www.rodsbooks.com/refind/getting.html) |
 | No Windows / another Linux than CachyOS | fine — the theme is installed and rEFInd picks the matching icons (`os_linux`, `os_ubuntu`, `os_fedora`, …) itself |
+| **Only Windows on the PC** | fine — the installer adds rEFInd from Windows by itself (one click in Theme Studio), see the [step-by-step guide](#-only-windows-on-your-pc-step-by-step-guide) |
 
 The installer looks for rEFInd in `/boot/EFI/refind`, `/boot/efi/EFI/refind`, `/efi/EFI/refind` and on every mounted partition (or pass `--refind-dir`).
 
@@ -136,7 +137,7 @@ The files end up in `dist/ghoul-cyber/`.
 
 ## 🪟 Manual install on Windows
 
-On Windows the script never touches the boot partition. Build the package (`py build_and_deploy_theme.py --build-only`) **or** download a ready-made `ghoul-cyber-v*.zip` from [Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases), then in a terminal **running as Administrator**:
+Without `--install` the script never touches the boot partition on Windows. If you prefer to do it all by hand, build the package (`py build_and_deploy_theme.py --build-only`) **or** download a ready-made `ghoul-cyber-v*.zip` from [Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases), then in a terminal **running as Administrator**:
 
 ```powershell
 mountvol S: /S
@@ -152,6 +153,46 @@ include themes/ghoul-cyber/theme.conf
 ```
 
 > 💡 With a manual install, also check `themes/ghoul-cyber/theme.conf`: the `resolution` line must match your monitor, and the sample `menuentry "Windows 11 Gaming"` block can be removed or adapted to your own disks.
+
+---
+
+## 💻 Only Windows on your PC? Step-by-step guide
+
+You don't need Linux to get this boot screen — **one click in Theme Studio does everything**. **Your files are safe:** nothing on the Windows drive is formatted, shrunk or moved. Only about 1 MB of rEFInd plus the theme goes onto the hidden EFI partition, and Windows stays in the BIOS boot menu as a fallback.
+
+### Step 1 — Save your BitLocker recovery key (just in case)
+Go to https://aka.ms/myrecoverykey, find your key and **write it down** or take a photo of it. The program pauses BitLocker itself before every boot change, so you should not need the key — but it is good to have.
+
+### Step 2 — Click "Build and install"
+Download **[Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**, pick a theme, set the resolution **to match your screen** (Settings → System → Display) and click **BUILD AND INSTALL**. Confirm the administrator prompt. The program then:
+
+1. checks that the PC runs in **UEFI** mode and that **Secure Boot** is off,
+2. downloads the official rEFInd 0.14.2 and checks its SHA-256 checksum,
+3. copies it to the EFI partition (next to Windows, nothing is overwritten),
+4. pauses BitLocker for the next 2 restarts (Windows turns it back on by itself),
+5. adds a **new** *rEFInd* boot entry in front of *Windows Boot Manager* (which stays untouched),
+6. installs and activates the theme.
+
+<sub>Prefer the command line? `py build_and_deploy_theme.py --resolution 1920x1080 --install` (use your own resolution).</sub>
+
+### Step 3 — Only if the program says Secure Boot is on
+rEFInd is not signed by Microsoft, so it would not start with Secure Boot on — the program then installs nothing and only pauses BitLocker right away, so that turning Secure Boot off does not end with a recovery-key prompt.
+
+1. Open the BIOS/UEFI settings. Easiest: Command Prompt as administrator → `shutdown /r /fw /t 0` (or press `F2`, `F10`, `Del` or `Esc` right after power-on).
+2. Find **Secure Boot**, set it to **Disabled**, then save and exit (usually `F10`).
+3. Once Windows is back, click **BUILD AND INSTALL** again.
+
+If the program says the PC runs in **Legacy BIOS** mode, rEFInd will not work on it.
+
+### Step 4 — Restart 🎉
+You will see the Ghoul Cyber screen with a Windows tile. Press Enter (or wait a few seconds) and Windows starts as usual.
+
+### Something wrong?
+- **Windows starts instead of rEFInd:** move *rEFInd* to the top of the boot order in the BIOS. Some laptops (often HP) ignore the order set from Windows — then add an entry in the BIOS by hand with the path `\EFI\refind\refind_x64.efi` (HP: *Customized Boot*). Do not rename or replace Microsoft's files.
+- **Black screen or rEFInd does not start:** right after power-on press the boot-menu key (`F12`, `F9` or `Esc`) and choose **Windows Boot Manager** — Windows starts normally.
+- **After a big Windows update Windows starts directly again:** click **BUILD AND INSTALL** once more — the program puts rEFInd first again.
+- **No internet:** download `refind-bin-0.14.2.zip` from the [official rEFInd page](https://www.rodsbooks.com/refind/getting.html) and pass it: `py build_and_deploy_theme.py --install --refind-zip refind-bin-0.14.2.zip`.
+- **Undo everything:** `py build_and_deploy_theme.py --remove-refind` removes the *rEFInd* boot entry and the `EFI\refind` folder (theme included) — only if this program installed them. Then you can turn Secure Boot back on in the BIOS.
 
 ---
 
@@ -174,7 +215,9 @@ include themes/ghoul-cyber/theme.conf
 | `--list-themes` | Prints the available themes |
 | `--config PATH` | Settings file (default: `boot-config.json` next to the script, if present) |
 | `--check-config` | Validates the settings and prints the generated `theme.conf` |
-| `--install` | Windows: also install the built theme into rEFInd (asks for UAC) |
+| `--install` | Windows: also install the built theme into rEFInd (asks for UAC); installs rEFInd itself first if it is missing |
+| `--refind-zip FILE` | Windows: use a downloaded `refind-bin-0.14.2.zip` instead of downloading it |
+| `--remove-refind` | Windows: remove the rEFInd this program installed (boot entry, `EFI\refind` and the theme) |
 
 ---
 

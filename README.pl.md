@@ -64,7 +64,7 @@ Pełny, prawnie wiążący tekst licencji w języku polskim i angielskim znajduj
   - Obsługa rozdzielczości 1440p (2560×1440) oraz 1080p (1920×1080) i innych formatów 16:9.
 - **W pełni zautomatyzowany instalator (`build_and_deploy_theme.py`):**
   - **Linux (każda popularna dystrybucja):** Pełny automat — doinstalowuje brakujące pakiety menedżerem pakietów Twojej dystrybucji, sam instaluje rEFInd, jeśli go brakuje (po zapytaniu), mapuje wpisy UEFI NVRAM na właściwe karty rozruchowe (*Windows DEV*, *Windows Gaming*, *CachyOS* — każdą tylko jeśli ją masz; komputer z samym Linuksem też jest OK), instaluje assety do `/boot/efi/EFI/refind/themes/ghoul-cyber` i bezpiecznie aktualizuje `refind.conf` (z transakcyjnym backupem i rollbackiem).
-  - **Windows:** Tryb build-only generujący gotową paczkę do katalogu `dist/ghoul-cyber`.
+  - **Windows:** z `--install` (albo jednym kliknięciem w Theme Studio) instaluje motyw — a gdy na komputerze nie ma rEFInd, najpierw sam go pobiera (sprawdzając sumę SHA-256), kopiuje na partycję EFI i dodaje do menu rozruchu przed Windowsem. Bez `--install` buduje gotową paczkę do katalogu `dist/ghoul-cyber`.
 - **Generator assetów z dynamiczną telemetrią:**
   - Automatyczne nakładanie informacji o procesorze (CPU), pamięci RAM, karcie graficznej (GPU), dysku NVMe i stanie Secure Boot na tapetę tła.
   - Generowanie kompletnego zestawu ikon narzędziowych i systemowych (Windows, CachyOS, Linux, Arch, Debian, Ubuntu, Fedora, macOS i inne).
@@ -90,6 +90,7 @@ Nic nie musisz robić ręcznie: gdy rEFInd nie zostanie znaleziony, instalator z
 | **Włączony Secure Boot** | zatrzymuje się z wyjaśnieniem — niepodpisany rEFInd by nie wystartował; wyłącz Secure Boot albo zainstaluj rEFInd z shim/MOK samodzielnie |
 | openSUSE | rEFInd nie ma w oficjalnych repozytoriach — instalator wskaże [oficjalne pobieranie](https://www.rodsbooks.com/refind/getting.html) |
 | Brak Windowsa / inny Linux niż CachyOS | bez problemu — motyw się instaluje, a rEFInd sam dobiera ikony (`os_linux`, `os_ubuntu`, `os_fedora`, …) |
+| **Na komputerze jest tylko Windows** | bez problemu — instalator sam wgra rEFInd z poziomu Windowsa (jedno kliknięcie w Theme Studio), zobacz [poradnik krok po kroku](#-masz-tylko-windowsa-poradnik-krok-po-kroku) |
 
 Instalator szuka rEFInd w `/boot/EFI/refind`, `/boot/efi/EFI/refind`, `/efi/EFI/refind` oraz na każdej zamontowanej partycji (albo podaj `--refind-dir`).
 
@@ -136,7 +137,7 @@ Pliki trafią do katalogu `dist/ghoul-cyber/`.
 
 ## 🪟 Ręczna instalacja na Windowsie
 
-Na Windowsie skrypt nigdy nie dotyka partycji rozruchowej. Zbuduj paczkę (`py build_and_deploy_theme.py --build-only`) **albo** pobierz gotowe archiwum `ghoul-cyber-v*.zip` z [Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases), a następnie w terminalu **uruchomionym jako administrator**:
+Bez `--install` skrypt na Windowsie nie dotyka partycji rozruchowej. Jeśli wolisz zrobić wszystko ręcznie, zbuduj paczkę (`py build_and_deploy_theme.py --build-only`) **albo** pobierz gotowe archiwum `ghoul-cyber-v*.zip` z [Releases](https://github.com/Dismonder/refind-theme-ghoul-cyber/releases), a następnie w terminalu **uruchomionym jako administrator**:
 
 ```powershell
 mountvol S: /S
@@ -152,6 +153,46 @@ include themes/ghoul-cyber/theme.conf
 ```
 
 > 💡 Przy ręcznej instalacji zajrzyj też do `themes/ghoul-cyber/theme.conf`: linijka `resolution` musi pasować do Twojego monitora, a przykładowy blok `menuentry "Windows 11 Gaming"` możesz usunąć albo dostosować do swoich dysków.
+
+---
+
+## 💻 Masz tylko Windowsa? Poradnik krok po kroku
+
+Nie potrzebujesz Linuksa, żeby mieć ten ekran startowy — **wszystko robi jedno kliknięcie w Theme Studio**. **Twoje pliki są bezpieczne:** nic na dysku z Windowsem nie jest formatowane, zmniejszane ani przenoszone. Na ukrytą partycję EFI trafia tylko ok. 1 MB rEFInd i sam motyw, a Windows zostaje w menu rozruchu BIOS-u jako zapasowe wyjście.
+
+### Krok 1 — Zapisz klucz odzyskiwania BitLocker (na wszelki wypadek)
+Wejdź na https://aka.ms/myrecoverykey, znajdź swój klucz i **zapisz go** na kartce albo zrób mu zdjęcie. Program sam wstrzymuje BitLockera przed każdą zmianą rozruchu, więc klucz nie powinien być potrzebny — ale lepiej go mieć.
+
+### Krok 2 — Kliknij „Zbuduj i zainstaluj”
+Pobierz **[Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**, wybierz motyw, ustaw rozdzielczość **taką jak ma Twój ekran** (Ustawienia → System → Ekran) i kliknij **ZBUDUJ I ZAINSTALUJ**. Potwierdź okienko uprawnień administratora. Program sam:
+
+1. sprawdza, czy komputer działa w trybie **UEFI** i czy **Secure Boot** jest wyłączony,
+2. pobiera oficjalny rEFInd 0.14.2 i sprawdza jego sumę SHA-256,
+3. kopiuje go na partycję EFI (obok Windowsa, nic nie nadpisuje),
+4. wstrzymuje BitLockera na 2 najbliższe restarty (potem Windows sam go włącza),
+5. dodaje **nowy** wpis rozruchowy *rEFInd* przed *Windows Boot Manager* (ten zostaje nietknięty),
+6. instaluje i włącza motyw.
+
+<sub>Wolisz wiersz poleceń? `py build_and_deploy_theme.py --resolution 1920x1080 --install` (wpisz swoją rozdzielczość).</sub>
+
+### Krok 3 — Tylko jeśli program napisze, że Secure Boot jest włączony
+rEFInd nie jest podpisany przez Microsoft, więc przy włączonym Secure Boot by nie wystartował — program wtedy niczego nie instaluje, tylko od razu wstrzymuje BitLockera, żeby wyłączenie Secure Boot nie skończyło się pytaniem o klucz.
+
+1. Wejdź do BIOS-u/UEFI. Najprościej: Wiersz polecenia jako administrator → `shutdown /r /fw /t 0` (albo `F2`, `F10`, `Del` lub `Esc` zaraz po włączeniu).
+2. Znajdź **Secure Boot**, ustaw **Disabled**, zapisz i wyjdź (zwykle `F10`).
+3. Po starcie Windowsa kliknij jeszcze raz **ZBUDUJ I ZAINSTALUJ**.
+
+Jeśli program napisze, że komputer działa w trybie **Legacy BIOS**, rEFInd na nim nie zadziała.
+
+### Krok 4 — Restart 🎉
+Zobaczysz ekran Ghoul Cyber z kafelkiem Windows. Naciśnij Enter (albo odczekaj kilka sekund), a Windows uruchomi się jak zwykle.
+
+### Coś nie działa?
+- **Zamiast rEFInd startuje Windows:** w BIOS-ie przesuń *rEFInd* na początek kolejności rozruchu. Niektóre laptopy (często HP) ignorują kolejność ustawioną z Windowsa — wtedy dodaj w BIOS-ie wpis ręcznie ze ścieżką `\EFI\refind\refind_x64.efi` (HP: *Customized Boot*). Nie zmieniaj nazw i nie podmieniaj plików Microsoftu.
+- **Czarny ekran albo rEFInd nie startuje:** zaraz po włączeniu naciśnij klawisz menu rozruchu (`F12`, `F9` albo `Esc`) i wybierz **Windows Boot Manager** — Windows uruchomi się normalnie.
+- **Po dużej aktualizacji Windows znów startuje od razu:** kliknij jeszcze raz **ZBUDUJ I ZAINSTALUJ** — program ustawi rEFInd z powrotem jako pierwszy.
+- **Brak internetu:** pobierz `refind-bin-0.14.2.zip` z [oficjalnej strony rEFInd](https://www.rodsbooks.com/refind/getting.html) i podaj go: `py build_and_deploy_theme.py --install --refind-zip refind-bin-0.14.2.zip`.
+- **Cofnięcie wszystkiego:** `py build_and_deploy_theme.py --remove-refind` usuwa wpis *rEFInd* z menu rozruchu i folder `EFI\refind` (razem z motywem) — tylko jeśli zainstalował je ten program. Potem możesz z powrotem włączyć Secure Boot w BIOS-ie.
 
 ---
 
@@ -174,7 +215,9 @@ include themes/ghoul-cyber/theme.conf
 | `--list-themes` | Wypisuje dostępne motywy |
 | `--config ŚCIEŻKA` | Plik ustawień (domyślnie `boot-config.json` obok skryptu, jeśli istnieje) |
 | `--check-config` | Sprawdza ustawienia i pokazuje wygenerowany `theme.conf` |
-| `--install` | Windows: po zbudowaniu instaluje motyw w rEFInd (pyta o UAC) |
+| `--install` | Windows: po zbudowaniu instaluje motyw w rEFInd (pyta o UAC); gdy rEFInd brakuje, najpierw instaluje rEFInd |
+| `--refind-zip PLIK` | Windows: użyj pobranego `refind-bin-0.14.2.zip` zamiast pobierać go z internetu |
+| `--remove-refind` | Windows: usuń rEFInd zainstalowany przez ten program (wpis rozruchowy, `EFI\refind` i motyw) |
 
 ---
 

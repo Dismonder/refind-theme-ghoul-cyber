@@ -11,7 +11,8 @@ Build and, on Linux, deploy the ghoul-cyber rEFInd theme.
 
 Run without arguments on CachyOS to build the 4K theme, discover rEFInd,
 assign the DEV/GAMING/CachyOS cards, deploy the assets, and activate the
-theme. On Windows, an argument-free run only builds dist/ghoul-cyber.
+theme. On Windows, an argument-free run only builds dist/ghoul-cyber;
+--install also installs it - and rEFInd itself first, if the PC has none.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ __version__ = "1.0.0"
 
 import argparse
 import colorsys
+import contextlib
 import dataclasses
 import datetime as dt
 import hashlib
@@ -39,7 +41,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Iterator, Mapping, Sequence
 
 try:
     from PIL import (
@@ -826,10 +828,22 @@ def create_parser(script_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--install",
         action="store_true",
-        help="Windows: also install the built theme into rEFInd on the EFI partition (asks for UAC)",
+        help="Windows: also install the built theme into rEFInd on the EFI partition (asks for "
+             "UAC); installs rEFInd itself first if it is missing",
+    )
+    parser.add_argument(
+        "--refind-zip",
+        type=Path,
+        help="Windows: use this downloaded refind-bin zip instead of downloading it",
+    )
+    parser.add_argument(
+        "--remove-refind",
+        action="store_true",
+        help="Windows: remove the rEFInd this program installed (boot entry, EFI/refind and the theme)",
     )
     parser.add_argument("--_apply-plan", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--_windows-install", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--_windows-remove", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--_log", type=Path, help=argparse.SUPPRESS)
     return parser
 
@@ -4608,52 +4622,397 @@ def list_windows_esps(runner=run_command) -> list[tuple[int, int, str]]:
     return esps
 
 
+@contextlib.contextmanager
+def mounted_windows_esps(runner=run_command) -> Iterator[list[Path]]:
+    """Root of every EFI System Partition, each with a drive letter while inside."""
+    if not _windows_is_admin():
+        raise ThemeError("changing the EFI partition needs administrator rights")
+    mounted: list[tuple[int, int, str]] = []
+    try:
+        roots: list[Path] = []
+        free = _free_drive_letters()
+        for disk, part, letter in list_windows_esps(runner):
+            if not letter:
+                if not free:
+                    raise ThemeError("no free drive letter to open the EFI partition")
+                letter = free.pop(0)
+                result = _powershell(
+                    f"Add-PartitionAccessPath -DiskNumber {disk} -PartitionNumber {part} "
+                    f"-AccessPath '{letter}:\\'", runner)
+                if result.returncode != 0:
+                    print(f"skipping EFI partition {disk}/{part}: {(result.stderr or '').strip()}")
+                    continue
+                mounted.append((disk, part, letter))
+            roots.append(Path(f"{letter}:\\"))
+        yield roots
+    finally:
+        for disk, part, letter in mounted:
+            _powershell(
+                f"Remove-PartitionAccessPath -DiskNumber {disk} -PartitionNumber {part} "
+                f"-AccessPath '{letter}:\\'", runner)
+
+
+# --- rEFInd itself on a PC with only Windows ----------------------------------
+# The official binary release, pinned and checked against its SHA-256 before
+# anything on the ESP is touched. It is added as a NEW firmware boot entry put
+# in front of Windows Boot Manager, which itself is never changed. The marker
+# file says "installed by this program", so a re-run can put rEFInd first again
+# after a Windows update and --remove-refind may delete it.
+
+REFIND_VERSION = "0.14.2"
+REFIND_ZIP_SHA256 = "410c7828c4fec2f2179bd956073522415831d27c00416381b8f71153c190a311"
+REFIND_ZIP_URLS = (
+    f"https://downloads.sourceforge.net/project/refind/{REFIND_VERSION}/refind-bin-{REFIND_VERSION}.zip",
+    f"https://sourceforge.net/projects/refind/files/{REFIND_VERSION}/refind-bin-{REFIND_VERSION}.zip/download",
+)
+REFIND_ZIP_MAX_BYTES = 32_000_000
+REFIND_MARKER = "ghoul-cyber-refind.json"
+FWBOOTMGR_GUID = "{a5a30fa2-3d06-4e9f-b5f4-a01df9d1fcba}"
+BCD_GUID = re.compile(r"\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}")
+BITLOCKER_PAUSE_REBOOTS = 2
+# Prints none / off / paused. The CIM class is used instead of manage-bde,
+# whose output is translated.
+WINDOWS_BITLOCKER_PAUSE = r"""
+$ErrorActionPreference = 'Stop'
+try {
+  $v = Get-CimInstance -Namespace root/cimv2/security/microsoftvolumeencryption `
+    -ClassName Win32_EncryptableVolume -Filter "DriveLetter='$env:SystemDrive'"
+} catch { 'none'; exit 0 }
+if (-not $v) { 'none'; exit 0 }
+if ((Invoke-CimMethod -InputObject $v -MethodName GetProtectionStatus).ProtectionStatus -ne 1) { 'off'; exit 0 }
+$r = Invoke-CimMethod -InputObject $v -MethodName DisableKeyProtectors -Arguments @{DisableCount = [uint32]%d}
+if ($r.ReturnValue -ne 0) { throw ('DisableKeyProtectors returned 0x{0:X}' -f $r.ReturnValue) }
+'paused'
+"""
+
+
+def windows_efi_arch(environ: Mapping[str, str] = os.environ) -> str:
+    """rEFInd binary suffix for this PC (x64, or aa64 on ARM laptops)."""
+    machine = (environ.get("PROCESSOR_ARCHITEW6432") or environ.get("PROCESSOR_ARCHITECTURE")
+               or platform.machine()).upper()
+    arch = {"AMD64": "x64", "X86_64": "x64", "ARM64": "aa64", "X86": "ia32"}.get(machine)
+    if arch is None:
+        raise ThemeError(f"rEFInd has no version for this processor ({machine})")
+    return arch
+
+
+def windows_firmware_is_uefi() -> bool | None:
+    try:
+        import ctypes
+
+        kind = ctypes.c_uint32(0)
+        if ctypes.windll.kernel32.GetFirmwareType(ctypes.byref(kind)):
+            return kind.value == 2  # FirmwareTypeUefi
+    except (AttributeError, OSError):
+        pass
+    return None
+
+
+def windows_secure_boot_enabled() -> bool | None:
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Control\SecureBoot\State") as key:
+            return bool(winreg.QueryValueEx(key, "UEFISecureBootEnabled")[0])
+    except (ImportError, OSError):
+        return None
+
+
+def _bcdedit(*args: str, runner=run_command) -> str:
+    root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    # 32-bit Python on 64-bit Windows would otherwise get SysWOW64, which has no bcdedit
+    exe = root / "Sysnative" / "bcdedit.exe"
+    exe = exe if exe.is_file() else root / "System32" / "bcdedit.exe"
+    try:
+        result = runner((str(exe), *args))
+    except OSError as exc:
+        raise ThemeError(f"cannot run bcdedit: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise ThemeError(f"bcdedit {' '.join(args)} failed: {detail or 'no output'}")
+    return result.stdout or ""
+
+
+def _bcd_blocks(listing: str) -> list[str]:
+    return [block for block in re.split(r"\r?\n[ \t]*\r?\n", listing) if block.strip()]
+
+
+def find_firmware_entry(listing: str, loader: str) -> str | None:
+    """GUID of the entry starting `loader` in `bcdedit /enum firmware /v`.
+
+    Field names are translated, so only the GUID and the path value are used.
+    """
+    wanted = loader.casefold()
+    for block in _bcd_blocks(listing):
+        ids = BCD_GUID.findall(block)
+        values = (line.split(None, 1)[-1].strip().casefold() for line in block.splitlines())
+        if ids and wanted in values:
+            return ids[0].lower()
+    return None
+
+
+def firmware_display_order(listing: str) -> list[str]:
+    for block in _bcd_blocks(listing):
+        ids = [guid.lower() for guid in BCD_GUID.findall(block)]
+        if ids and ids[0] == FWBOOTMGR_GUID:
+            return ids[1:]
+    return []
+
+
+def pause_bitlocker(runner=run_command) -> None:
+    """Pause BitLocker for the next restarts before the boot chain changes.
+
+    The TPM measures every program on the boot path; with rEFInd added (or
+    removed) Windows would otherwise ask for the recovery key. Windows turns
+    the protection back on by itself after BITLOCKER_PAUSE_REBOOTS restarts.
+    """
+    result = _powershell(WINDOWS_BITLOCKER_PAUSE % BITLOCKER_PAUSE_REBOOTS, runner)
+    lines = (result.stdout or "").split()
+    state = lines[-1] if lines else ""
+    if result.returncode != 0 or state not in {"none", "off", "paused"}:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise ThemeError(
+            "could not pause BitLocker, so the boot order was left unchanged (Windows would "
+            f"otherwise ask for the recovery key): {detail[-300:] or 'no output'}"
+        )
+    if state == "paused":
+        print(f"BitLocker paused for the next {BITLOCKER_PAUSE_REBOOTS} restarts - "
+              "Windows turns it back on by itself")
+
+
+def fetch_refind_zip(local: Path | None = None) -> bytes:
+    """The official refind-bin zip, from `local` or downloaded, checksum-verified."""
+    if local is not None:
+        try:
+            data = local.read_bytes()
+        except OSError as exc:
+            raise ThemeError(f"cannot read {local}: {exc}") from exc
+    else:
+        import urllib.request
+
+        data, failures = None, []
+        print(f"downloading rEFInd {REFIND_VERSION}...", flush=True)
+        for url in REFIND_ZIP_URLS:
+            try:
+                with urllib.request.urlopen(url, timeout=60) as response:
+                    data = response.read(REFIND_ZIP_MAX_BYTES + 1)
+                break
+            except (OSError, ValueError) as exc:
+                failures.append(f"{url}: {exc}")
+        if data is None:
+            raise ThemeError(
+                "cannot download rEFInd - check the internet connection, or download "
+                f"refind-bin-{REFIND_VERSION}.zip yourself ({REFIND_DOWNLOAD}) and pass it "
+                f"with --refind-zip. {' | '.join(failures)}"
+            )
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != REFIND_ZIP_SHA256:
+        raise ThemeError(
+            f"this is not the official refind-bin-{REFIND_VERSION}.zip (SHA-256 {digest}); "
+            "nothing was changed"
+        )
+    return data
+
+
+def refind_files_from_zip(data: bytes, arch: str) -> dict[str, bytes]:
+    """What rEFInd needs on a Windows-only PC, keyed by path inside EFI/refind."""
+    import io
+    import zipfile
+
+    binary = f"refind_{arch}.efi"
+    files: dict[str, bytes] = {}
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        for info in archive.infolist():
+            parts = PurePosixPath(info.filename).parts
+            if info.is_dir() or len(parts) < 3 or parts[1] != "refind" or ".." in parts:
+                continue
+            inner = "/".join(parts[2:])
+            if inner == binary or parts[2] == "icons":
+                files[inner] = archive.read(info)
+            elif inner == "refind.conf-sample":
+                files["refind.conf"] = archive.read(info)
+    if binary not in files or "refind.conf" not in files:
+        raise ThemeError(f"the rEFInd archive has no {binary} or refind.conf-sample")
+    return files
+
+
+def _tree_size(root: Path) -> int:
+    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
+
+def _refind_marker_loader(refind_dir: Path) -> str:
+    try:
+        loader = json.loads((refind_dir / REFIND_MARKER).read_text(encoding="utf-8"))["loader"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ThemeError(f"damaged {refind_dir / REFIND_MARKER}: {exc}") from exc
+    if not isinstance(loader, str) or not re.fullmatch(r"\\EFI\\refind\\refind_\w+\.efi", loader):
+        raise ThemeError(f"unexpected loader in {refind_dir / REFIND_MARKER}: {loader!r}")
+    return loader
+
+
+def ensure_refind_boot_entry(refind_dir: Path, *, dry_run: bool = False, runner=run_command) -> None:
+    """Make the firmware start the rEFInd this program installed before Windows.
+
+    Windows Boot Manager stays untouched as the next entry. A big Windows update
+    can put itself first again; running the installer again fixes that.
+    """
+    loader = _refind_marker_loader(refind_dir)
+    listing = _bcdedit("/enum", "firmware", "/v", runner=runner)
+    entry = find_firmware_entry(listing, loader)
+    if entry is not None and firmware_display_order(listing)[:1] == [entry]:
+        print("rEFInd is the first boot entry")
+        return
+    if dry_run:
+        print("dry run: would pause BitLocker and put a 'rEFInd' boot entry before Windows Boot Manager")
+        return
+    pause_bitlocker(runner)
+    created = None
+    try:
+        if entry is None:
+            reply = _bcdedit("/copy", "{bootmgr}", "/d", "rEFInd", runner=runner)
+            ids = BCD_GUID.findall(reply)
+            if not ids:
+                raise ThemeError(f"bcdedit did not report the new boot entry: {reply.strip()}")
+            entry = created = ids[0].lower()
+            _bcdedit("/set", entry, "device", f"partition={refind_dir.drive}", runner=runner)
+            _bcdedit("/set", entry, "path", loader, runner=runner)
+        _bcdedit("/set", "{fwbootmgr}", "displayorder", entry, "/addfirst", runner=runner)
+    except ThemeError:
+        if created is not None:
+            try:
+                _bcdedit("/delete", created, runner=runner)
+            except ThemeError:
+                pass
+        raise
+    print("rEFInd added to the boot menu before Windows Boot Manager")
+
+
+def install_refind_windows(
+    esp_roots: Sequence[Path],
+    *,
+    refind_zip: Path | None = None,
+    extra_bytes: int = 0,
+    dry_run: bool = False,
+    runner=run_command,
+) -> Path:
+    """Put rEFInd on the ESP that holds Windows Boot Manager and boot it first."""
+    if windows_firmware_is_uefi() is False:
+        raise ThemeError(
+            "this PC starts in legacy BIOS mode; rEFInd works only with UEFI. Nothing was changed"
+        )
+    if windows_secure_boot_enabled():
+        # Turning Secure Boot off changes what the TPM measures as well, so
+        # BitLocker is paused now - before the user goes into the firmware.
+        paused = "Turn BitLocker off for a moment yourself first if this PC uses it. "
+        if not dry_run:
+            try:
+                pause_bitlocker(runner)
+                paused = ""
+            except ThemeError as exc:
+                print(exc)
+        raise ThemeError(
+            "Secure Boot is ON, so rEFInd (not signed by Microsoft) would not start. Nothing on "
+            f"the EFI partition was changed. {paused}Turn Secure Boot off in the BIOS/UEFI "
+            "settings and click Install again. To open those settings, restart with: "
+            "shutdown /r /fw /t 0"
+        )
+    if not esp_roots:
+        raise ThemeError("no EFI system partition was found on this PC")
+    arch = windows_efi_arch()
+    root = next((r for r in esp_roots if (r / "EFI" / "Microsoft" / "Boot" / "bootmgfw.efi").is_file()),
+                esp_roots[0])
+    target = root / "EFI" / "refind"
+    ours = (target / REFIND_MARKER).is_file()
+    if target.exists() and not ours and any(target.iterdir()):
+        raise ThemeError(f"{target} exists but holds no working rEFInd; move it away and try again")
+    if dry_run:
+        print(f"dry run: would download rEFInd {REFIND_VERSION} (SHA-256 checked), copy it to "
+              f"{target}, pause BitLocker and put a 'rEFInd' boot entry before Windows Boot Manager")
+        return target
+    files = refind_files_from_zip(fetch_refind_zip(refind_zip), arch)
+    needed = sum(len(content) for content in files.values()) + extra_bytes + 1_000_000
+    free = shutil.disk_usage(root).free
+    if free < needed:
+        raise ThemeError(
+            f"the EFI partition has {free // 1_000_000} MB free, rEFInd and the theme need "
+            f"{needed // 1_000_000} MB - pick a lower resolution and try again. Nothing was changed"
+        )
+    print(f"installing rEFInd {REFIND_VERSION} to {target}")
+    created = not target.exists()
+    try:
+        for name, content in files.items():
+            destination = target.joinpath(*name.split("/"))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+        marker = {"version": REFIND_VERSION, "loader": f"\\EFI\\refind\\refind_{arch}.efi",
+                  "installed": dt.datetime.now().isoformat(timespec="seconds")}
+        (target / REFIND_MARKER).write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+        ensure_refind_boot_entry(target, runner=runner)
+    except BaseException:
+        if created:
+            shutil.rmtree(target, ignore_errors=True)
+        raise
+    return target
+
+
+def remove_refind_windows(*, dry_run: bool = False, runner=run_command) -> None:
+    """Undo install_refind_windows: boot entry and EFI/refind (theme included)."""
+    with mounted_windows_esps(runner) as roots:
+        targets = [r / "EFI" / "refind" for r in roots if (r / "EFI" / "refind" / REFIND_MARKER).is_file()]
+        if not targets:
+            raise ThemeError("no rEFInd installed by this program was found; nothing was changed")
+        for target in targets:
+            loader = _refind_marker_loader(target)
+            listing = _bcdedit("/enum", "firmware", "/v", runner=runner)
+            entry = find_firmware_entry(listing, loader)
+            if dry_run:
+                print(f"dry run: would remove the 'rEFInd' boot entry and {target}")
+                continue
+            if entry is not None:
+                if firmware_display_order(listing)[:1] == [entry]:
+                    pause_bitlocker(runner)
+                _bcdedit("/delete", entry, runner=runner)
+            shutil.rmtree(target)
+            print(f"rEFInd removed from {target}; the PC starts Windows directly again")
+
+
 def install_theme_windows(
     theme_source: Path,
     refind_dir: Path | None = None,
     *,
+    refind_zip: Path | None = None,
     dry_run: bool = False,
     runner=run_command,
 ) -> Path:
     """Copy a built theme into rEFInd on an ESP and activate it (Windows).
 
     Same guarantees as on Linux: only owned files are written, refind.conf gets
-    a timestamped backup, and any failure rolls every file back.
+    a timestamped backup, and any failure rolls every file back. Without a
+    rEFInd on any ESP, rEFInd itself is installed first.
     """
     _load_theme_state(theme_source)
-    mounted: list[tuple[int, int, str]] = []
-    try:
+    with contextlib.ExitStack() as stack:
         if refind_dir is None:
-            if not _windows_is_admin():
-                raise ThemeError("installing to the EFI partition needs administrator rights")
+            roots = stack.enter_context(mounted_windows_esps(runner))
             candidates: list[Path] = []
-            free = _free_drive_letters()
-            for disk, part, letter in list_windows_esps(runner):
-                if not letter:
-                    if not free:
-                        raise ThemeError("no free drive letter to open the EFI partition")
-                    letter = free.pop(0)
-                    result = _powershell(
-                        f"Add-PartitionAccessPath -DiskNumber {disk} -PartitionNumber {part} "
-                        f"-AccessPath '{letter}:\\'", runner)
-                    if result.returncode != 0:
-                        print(f"skipping EFI partition {disk}/{part}: {(result.stderr or '').strip()}")
-                        continue
-                    mounted.append((disk, part, letter))
-                root = Path(f"{letter}:\\")
+            for root in roots:
                 candidates += [root / "EFI" / "refind", root / "EFI" / "BOOT"]
                 candidates += sorted(p for p in (root / "EFI").glob("*") if p.is_dir())
             try:
                 refind_dir = find_refind_dir(None, candidates)
-            except ThemeError as exc:
-                raise ThemeError(
-                    "rEFInd was not found on any EFI partition of this PC. Install rEFInd "
-                    "first - the easiest way is to run this installer on your Linux system, which "
-                    f"installs rEFInd by itself; on Windows follow {REFIND_DOWNLOAD} - then try again"
-                ) from exc
+            except ThemeError:
+                print("rEFInd is not installed yet - installing it first")
+                refind_dir = install_refind_windows(
+                    roots, refind_zip=refind_zip, extra_bytes=_tree_size(theme_source),
+                    dry_run=dry_run, runner=runner)
+            else:
+                print(f"rEFInd found in: {refind_dir}")
+                if (refind_dir / REFIND_MARKER).is_file():
+                    ensure_refind_boot_entry(refind_dir, dry_run=dry_run, runner=runner)
         else:
             refind_dir = find_refind_dir(refind_dir, ())
-        print(f"rEFInd found in: {refind_dir}")
+            print(f"rEFInd found in: {refind_dir}")
         if dry_run:
             print(f"dry run: would copy the theme to {refind_dir / 'themes' / THEME_NAME} "
                   "and activate it in refind.conf")
@@ -4676,21 +5035,32 @@ def install_theme_windows(
             raise
         print("ghoul-cyber installed and activated in rEFInd")
         return refind_dir
-    finally:
-        for disk, part, letter in mounted:
-            _powershell(
-                f"Remove-PartitionAccessPath -DiskNumber {disk} -PartitionNumber {part} "
-                f"-AccessPath '{letter}:\\'", runner)
 
 
 def run_windows_install(build: ThemeBuild, args) -> None:
-    """Run the privileged part elevated (UAC) and stream its log back."""
+    """Install the theme (and rEFInd, if missing) with administrator rights."""
     if _windows_is_admin() or args.refind_dir is not None:
-        install_theme_windows(build.output_dir, args.refind_dir, dry_run=args.dry_run)
+        install_theme_windows(build.output_dir, args.refind_dir, refind_zip=args.refind_zip,
+                              dry_run=args.dry_run)
         return
+    zip_args = ["--refind-zip", str(args.refind_zip.resolve())] if args.refind_zip else []
+    _run_elevated(["--_windows-install", str(build.output_dir), *zip_args], dry_run=args.dry_run)
+
+
+def run_windows_remove(args) -> None:
+    if platform.system() != "Windows":
+        raise ThemeError("--remove-refind is for Windows; on Linux remove the refind package instead")
+    if _windows_is_admin():
+        remove_refind_windows(dry_run=args.dry_run)
+    else:
+        _run_elevated(["--_windows-remove"], dry_run=args.dry_run)
+
+
+def _run_elevated(arguments: list[str], *, dry_run: bool) -> None:
+    """Run this script again elevated (UAC) and stream its log back."""
     log = Path(tempfile.gettempdir()) / f"ghoul-cyber-install-{os.getpid()}.log"
-    inner = [str(Path(__file__).resolve()), "--_windows-install", str(build.output_dir),
-             "--_log", str(log)] + (["--dry-run"] if args.dry_run else [])
+    inner = [str(Path(__file__).resolve()), *arguments,
+             "--_log", str(log)] + (["--dry-run"] if dry_run else [])
     quoted = ",".join("'" + a.replace("'", "''") + "'" for a in inner)
     script = (
         f"$p = Start-Process -FilePath '{sys.executable}' -ArgumentList {quoted} "
@@ -4738,13 +5108,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = create_parser(script_dir)
     args = parser.parse_args(argv)
     given = list(argv if argv is not None else sys.argv[1:])
-    if args._windows_install is not None:
-        # Elevated child started by run_windows_install: log to a file the
+    if args._windows_install is not None or args._windows_remove:
+        # Elevated child started by _run_elevated: log to a file the
         # parent (non-admin) process reads back afterwards.
         log = open(args._log, "w", encoding="utf-8") if args._log else sys.stdout
         sys.stdout = sys.stderr = log
         try:
-            install_theme_windows(args._windows_install, dry_run=args.dry_run)
+            if args._windows_remove:
+                remove_refind_windows(dry_run=args.dry_run)
+            else:
+                install_theme_windows(args._windows_install, refind_zip=args.refind_zip,
+                                      dry_run=args.dry_run)
             return 0
         except (OSError, ThemeError, ValueError) as exc:
             print(f"ghoul-cyber: {exc}")
@@ -4752,6 +5126,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         finally:
             log.flush()
     try:
+        if args.remove_refind:
+            run_windows_remove(args)
+            return 0
         if args.list_themes:
             for name in (THEME_NAME, *list_skins()):
                 print(name)
