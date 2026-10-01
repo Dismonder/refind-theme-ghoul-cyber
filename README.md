@@ -90,6 +90,7 @@ Nothing to do by hand: when rEFInd is not found, the installer asks *"rEFInd is 
 | **Secure Boot is on** | stops with an explanation — an unsigned rEFInd would not start; turn Secure Boot off or install rEFInd with shim/MOK yourself |
 | openSUSE | rEFInd is not in the official repositories — the installer points you to the [official download](https://www.rodsbooks.com/refind/getting.html) |
 | No Windows / another Linux than CachyOS | fine — the theme is installed and rEFInd picks the matching icons (`os_linux`, `os_ubuntu`, `os_fedora`, …) itself |
+| **Only Windows on the PC** | the installer cannot add rEFInd from Windows — follow the [step-by-step guide](#-only-windows-on-your-pc-step-by-step-guide) |
 
 The installer looks for rEFInd in `/boot/EFI/refind`, `/boot/efi/EFI/refind`, `/efi/EFI/refind` and on every mounted partition (or pass `--refind-dir`).
 
@@ -152,6 +153,71 @@ include themes/ghoul-cyber/theme.conf
 ```
 
 > 💡 With a manual install, also check `themes/ghoul-cyber/theme.conf`: the `resolution` line must match your monitor, and the sample `menuentry "Windows 11 Gaming"` block can be removed or adapted to your own disks.
+
+---
+
+## 💻 Only Windows on your PC? Step-by-step guide
+
+You don't need Linux to get this boot screen. **Your files are safe:** nothing on the Windows disk is formatted, resized or moved. Only a few small files are added to the hidden EFI partition, and Windows stays in the firmware boot menu as a backup.
+
+> On Windows the installer does not install rEFInd itself, so you add it once by hand (steps 4–5). The whole thing takes about 15 minutes.
+
+### Step 1 — Check that your PC uses UEFI
+Press `Win + R`, type `msinfo32` and press Enter. Next to **BIOS Mode** it must say **UEFI**.
+If it says **Legacy**, stop here — rEFInd cannot run on this PC.
+
+### Step 2 — Protect your data (BitLocker)
+Turning off Secure Boot can make Windows ask for the **BitLocker recovery key**. Without that key you lose access to your files, so do this first:
+
+1. Open https://aka.ms/myrecoverykey, find your key and **write it down** or take a photo of it.
+2. Open **Command Prompt as administrator** (Start → type `cmd` → *Run as administrator*) and pause BitLocker for the next 3 restarts:
+   ```bat
+   manage-bde -protectors -disable C: -RebootCount 3
+   ```
+   If it says the drive is not encrypted, that's fine — carry on. BitLocker turns itself back on after 3 restarts.
+3. Optional, but smart: copy your most important files to a USB stick or OneDrive.
+
+### Step 3 — Turn off Secure Boot
+Restart and enter the BIOS/UEFI setup (usually `F2`, `F10`, `Del` or `Esc` right after power on). Find **Secure Boot**, set it to **Disabled**, then save and exit (usually `F10`).
+rEFInd is not signed by Microsoft, so it won't start while Secure Boot is on.
+
+### Step 4 — Copy rEFInd to the EFI partition
+1. Download `refind-bin-….zip` from the [official rEFInd page](https://www.rodsbooks.com/refind/getting.html) and unpack it.
+2. Inside you'll find a folder named `refind` (it contains `refind_x64.efi`). Copy that folder to `C:\`, so you have `C:\refind`.
+3. In **Command Prompt as administrator**, run these lines one at a time:
+   ```bat
+   mountvol S: /S
+   xcopy /E /I C:\refind S:\EFI\refind
+   ren S:\EFI\refind\refind.conf-sample refind.conf
+   ```
+   If `S:` is already taken, use another free letter (e.g. `R:`) everywhere in this guide.
+
+### Step 5 — Add rEFInd to the boot menu
+Still in the same window:
+```bat
+bcdedit /copy {bootmgr} /d "rEFInd"
+```
+Windows replies with an ID in curly braces, e.g. `{1a2b3c4d-....}`. Copy it (select it with the mouse, then `Ctrl + C`) and paste it in place of `{ID}` below:
+```bat
+bcdedit /set {ID} path \EFI\refind\refind_x64.efi
+bcdedit /set {fwbootmgr} displayorder {ID} /addfirst
+mountvol S: /D
+```
+This adds a **new** boot entry called *rEFInd* and puts it first. The *Windows Boot Manager* entry is left untouched.
+
+### Step 6 — Install the theme
+Download **[Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**, pick a theme, set the resolution to **your screen's resolution** (Settings → System → Display) and click **Install**. Confirm the Windows administrator prompt — the app finds rEFInd by itself.
+
+<sub>Prefer the command line? `py build_and_deploy_theme.py --resolution 1920x1080 --install` (use your own resolution).</sub>
+
+### Step 7 — Restart 🎉
+You'll see the Ghoul Cyber screen with a Windows tile. Press Enter (or just wait a few seconds) and Windows starts as usual.
+
+### Something went wrong?
+- **Windows starts instead of rEFInd:** in the BIOS, move *rEFInd* to the top of the boot order. Some laptops (often HP) ignore the order set from Windows — on those, add a boot entry by hand with the path `\EFI\refind\refind_x64.efi` (HP: *Customized Boot*). Don't rename or replace Microsoft's files.
+- **Black screen, or rEFInd won't start:** right after power on press the boot-menu key (`F12`, `F9` or `Esc`) and choose **Windows Boot Manager** — Windows starts normally.
+- **After a big Windows update, Windows starts directly again:** repeat the last `bcdedit ... /addfirst` line from step 5 (find the ID again with `bcdedit /enum firmware`).
+- **Undo everything:** in Command Prompt as administrator run `bcdedit /set {fwbootmgr} displayorder {bootmgr} /addfirst`. You can then switch Secure Boot back on in the BIOS.
 
 ---
 
