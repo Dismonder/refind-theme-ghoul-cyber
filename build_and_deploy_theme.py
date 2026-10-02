@@ -4781,6 +4781,35 @@ def pause_bitlocker(runner=run_command) -> None:
               "Windows turns it back on by itself")
 
 
+def _download(url: str, runner=run_command) -> bytes:
+    """Download with Python; on Windows fall back to the built-in curl.exe.
+
+    A freshly installed Windows has only a few root certificates in its store
+    and fetches the others the first time Windows itself (Schannel) needs one.
+    Python reads only what is already there, so it may fail with
+    CERTIFICATE_VERIFY_FAILED where curl.exe (Schannel) succeeds. The caller
+    checks the SHA-256 either way.
+    """
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return response.read(REFIND_ZIP_MAX_BYTES + 1)
+    except (OSError, ValueError) as exc:
+        curl = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "curl.exe"
+        if sys.platform != "win32" or not curl.is_file():
+            raise
+        print(f"Python could not download ({exc}); trying Windows' own curl.exe", flush=True)
+        with tempfile.TemporaryDirectory(prefix="ghoul-cyber-dl-") as raw:
+            target = Path(raw) / "download"
+            result = runner((str(curl), "--fail", "--silent", "--show-error", "--location",
+                             "--retry", "2", "--max-time", "300",
+                             "--max-filesize", str(REFIND_ZIP_MAX_BYTES), "--output", str(target), url))
+            if result.returncode != 0:
+                raise OSError(f"{exc}; curl.exe: {(result.stderr or result.stdout).strip()}") from exc
+            return target.read_bytes()
+
+
 def fetch_refind_zip(local: Path | None = None) -> bytes:
     """The official refind-bin zip, from `local` or downloaded, checksum-verified."""
     if local is not None:
@@ -4789,14 +4818,11 @@ def fetch_refind_zip(local: Path | None = None) -> bytes:
         except OSError as exc:
             raise ThemeError(f"cannot read {local}: {exc}") from exc
     else:
-        import urllib.request
-
         data, failures = None, []
         print(f"downloading rEFInd {REFIND_VERSION}...", flush=True)
         for url in REFIND_ZIP_URLS:
             try:
-                with urllib.request.urlopen(url, timeout=60) as response:
-                    data = response.read(REFIND_ZIP_MAX_BYTES + 1)
+                data = _download(url)
                 break
             except (OSError, ValueError) as exc:
                 failures.append(f"{url}: {exc}")

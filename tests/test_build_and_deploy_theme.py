@@ -902,6 +902,27 @@ class WindowsRefindInstallTests(unittest.TestCase):
                 subject.fetch_refind_zip(fake)
             self.assertIn("not the official", str(caught.exception))
 
+    def test_download_falls_back_to_windows_curl_on_certificate_errors(self):
+        # A fresh Windows lacks the root certificate until Schannel fetches it.
+        subject = load_subject()
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            Path(command[command.index("--output") + 1]).write_bytes(b"ZIP")
+            return subject.subprocess.CompletedProcess(command, 0, "", "")
+
+        error = OSError("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")
+        with patch("urllib.request.urlopen", side_effect=error), \
+             patch.object(subject.sys, "platform", "win32"), \
+             patch.object(subject.Path, "is_file", return_value=True):
+            self.assertEqual(subject._download("https://example.invalid/r.zip", runner=runner), b"ZIP")
+        self.assertTrue(calls[0][0].lower().endswith("curl.exe"))
+        self.assertEqual(calls[0][-1], "https://example.invalid/r.zip")
+        with patch("urllib.request.urlopen", side_effect=error), \
+             patch.object(subject.sys, "platform", "linux"), self.assertRaises(OSError):
+            subject._download("https://example.invalid/r.zip", runner=runner)
+
     def test_arch_follows_the_os_not_the_python_build(self):
         subject = load_subject()
         self.assertEqual(subject.windows_efi_arch({"PROCESSOR_ARCHITECTURE": "AMD64"}), "x64")
