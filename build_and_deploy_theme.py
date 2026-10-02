@@ -4781,38 +4781,96 @@ def pause_bitlocker(runner=run_command) -> None:
               "Windows turns it back on by itself")
 
 
-def fetch_refind_zip(local: Path | None = None) -> bytes:
-    """The official refind-bin zip, from `local` or downloaded, checksum-verified."""
+def _download_methods(url: str, target: Path, runner=run_command):
+    """(name, call) for every way to fetch `url` into `target` on this system.
+
+    Python comes first. On Windows two fallbacks follow, both using Windows'
+    own TLS (Schannel): a freshly installed Windows has only a few root
+    certificates and fetches the others when Schannel first needs one, while
+    Python reads only what is already in the store (CERTIFICATE_VERIFY_FAILED).
+    curl.exe ships with Windows 10 1803+, PowerShell also honours the proxy
+    configured in Windows (company networks).
+    """
+    def python():
+        import urllib.request
+
+        with urllib.request.urlopen(url, timeout=60) as response:
+            target.write_bytes(response.read(REFIND_ZIP_MAX_BYTES + 1))
+
+    def tool(command, name):
+        def call():
+            try:
+                result = runner(tuple(command))
+            except OSError as exc:
+                raise OSError(f"cannot run {name}: {exc}") from exc
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip().splitlines()
+                raise OSError(detail[-1] if detail else f"{name} exited with {result.returncode}")
+        return call
+
+    methods = [("Python", python)]
+    if sys.platform == "win32":
+        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        curl = system32 / "curl.exe"
+        if curl.is_file():
+            methods.append(("curl.exe", tool(
+                (str(curl), "--fail", "--silent", "--show-error", "--location", "--retry", "2",
+                 "--max-time", "300", "--max-filesize", str(REFIND_ZIP_MAX_BYTES),
+                 "--output", str(target), url), "curl.exe")))
+        quoted = lambda text: "'" + str(text).replace("'", "''") + "'"
+        methods.append(("PowerShell", tool(
+            ("powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "$ProgressPreference = 'SilentlyContinue'; "
+             "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
+             # a browser-like user agent gets SourceForge's download page instead of the file
+             "Invoke-WebRequest -UseBasicParsing -UserAgent 'Wget/1.21' "
+             f"-Uri {quoted(url)} -OutFile {quoted(target)}"),
+            "PowerShell")))
+    return methods
+
+
+def fetch_refind_zip(local: Path | None = None, runner=run_command) -> bytes:
+    """The official refind-bin zip, from `local` or downloaded, checksum-verified.
+
+    Every source and every download method is tried until one returns the file
+    with the pinned SHA-256, so a mirror that answers with a web page, a broken
+    proxy or missing root certificates do not stop the install.
+    """
     if local is not None:
         try:
             data = local.read_bytes()
         except OSError as exc:
             raise ThemeError(f"cannot read {local}: {exc}") from exc
-    else:
-        import urllib.request
-
-        data, failures = None, []
-        print(f"downloading rEFInd {REFIND_VERSION}...", flush=True)
-        for url in REFIND_ZIP_URLS:
-            try:
-                with urllib.request.urlopen(url, timeout=60) as response:
-                    data = response.read(REFIND_ZIP_MAX_BYTES + 1)
-                break
-            except (OSError, ValueError) as exc:
-                failures.append(f"{url}: {exc}")
-        if data is None:
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != REFIND_ZIP_SHA256:
             raise ThemeError(
-                "cannot download rEFInd - check the internet connection, or download "
-                f"refind-bin-{REFIND_VERSION}.zip yourself ({REFIND_DOWNLOAD}) and pass it "
-                f"with --refind-zip. {' | '.join(failures)}"
+                f"{local} is not the official refind-bin-{REFIND_VERSION}.zip (SHA-256 {digest}); "
+                "nothing was changed"
             )
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != REFIND_ZIP_SHA256:
-        raise ThemeError(
-            f"this is not the official refind-bin-{REFIND_VERSION}.zip (SHA-256 {digest}); "
-            "nothing was changed"
-        )
-    return data
+        return data
+    print(f"downloading rEFInd {REFIND_VERSION}...", flush=True)
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="ghoul-cyber-dl-") as raw:
+        target = Path(raw) / "refind-bin.zip"
+        for url in REFIND_ZIP_URLS:
+            for name, method in _download_methods(url, target, runner):
+                try:
+                    target.unlink(missing_ok=True)
+                    method()
+                    data = target.read_bytes()
+                except (OSError, ValueError) as exc:
+                    failures.append(f"{name} {url}: {exc}")
+                    continue
+                if len(data) <= REFIND_ZIP_MAX_BYTES and hashlib.sha256(data).hexdigest() == REFIND_ZIP_SHA256:
+                    if failures:
+                        print(f"downloaded with {name}", flush=True)
+                    return data
+                failures.append(f"{name} {url}: not the official file ({len(data)} bytes)")
+    raise ThemeError(
+        "cannot download rEFInd - check the internet connection, or download "
+        f"refind-bin-{REFIND_VERSION}.zip yourself ({REFIND_DOWNLOAD}) and pass it with "
+        f"--refind-zip. Nothing was changed. Details: {' | '.join(failures)}"
+    )
 
 
 def refind_files_from_zip(data: bytes, arch: str) -> dict[str, bytes]:
