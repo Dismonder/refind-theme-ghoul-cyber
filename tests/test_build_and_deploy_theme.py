@@ -902,26 +902,88 @@ class WindowsRefindInstallTests(unittest.TestCase):
                 subject.fetch_refind_zip(fake)
             self.assertIn("not the official", str(caught.exception))
 
-    def test_download_falls_back_to_windows_curl_on_certificate_errors(self):
-        # A fresh Windows lacks the root certificate until Schannel fetches it.
-        subject = load_subject()
-        calls = []
+    def _download_env(self, subject, *, python, curl, powershell, platform="win32"):
+        """Fake Python/curl.exe/PowerShell downloads: each is bytes to write or an OSError."""
+        import hashlib
+        import re
+
+        calls: list[str] = []
+
+        class Response:
+            def __init__(self, data):
+                self.data = data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self, _limit):
+                return self.data
+
+        def urlopen(url, timeout):
+            calls.append("Python")
+            if isinstance(python, Exception):
+                raise python
+            return Response(python)
 
         def runner(command):
-            calls.append(command)
-            Path(command[command.index("--output") + 1]).write_bytes(b"ZIP")
+            name = "curl.exe" if command[0].lower().endswith("curl.exe") else "PowerShell"
+            calls.append(name)
+            outcome = curl if name == "curl.exe" else powershell
+            if isinstance(outcome, Exception):
+                return subject.subprocess.CompletedProcess(command, 1, "", str(outcome))
+            target = (command[command.index("--output") + 1] if name == "curl.exe"
+                      else re.search(r"-OutFile '([^']+)'", command[-1]).group(1))
+            Path(target).write_bytes(outcome)
             return subject.subprocess.CompletedProcess(command, 0, "", "")
 
+        patches = (
+            patch("urllib.request.urlopen", urlopen),
+            patch.object(subject.sys, "platform", platform),
+            patch.object(subject.Path, "is_file", return_value=True),
+            patch.object(subject, "REFIND_ZIP_SHA256", hashlib.sha256(b"OFFICIAL").hexdigest()),
+        )
+        return patches, runner, calls
+
+    def test_download_survives_missing_root_certificates_on_a_fresh_windows(self):
+        subject = load_subject()
         error = OSError("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")
-        with patch("urllib.request.urlopen", side_effect=error), \
-             patch.object(subject.sys, "platform", "win32"), \
-             patch.object(subject.Path, "is_file", return_value=True):
-            self.assertEqual(subject._download("https://example.invalid/r.zip", runner=runner), b"ZIP")
-        self.assertTrue(calls[0][0].lower().endswith("curl.exe"))
-        self.assertEqual(calls[0][-1], "https://example.invalid/r.zip")
-        with patch("urllib.request.urlopen", side_effect=error), \
-             patch.object(subject.sys, "platform", "linux"), self.assertRaises(OSError):
-            subject._download("https://example.invalid/r.zip", runner=runner)
+        patches, runner, calls = self._download_env(subject, python=error, curl=b"OFFICIAL",
+                                                    powershell=OSError("unused"))
+        with patches[0], patches[1], patches[2], patches[3]:
+            self.assertEqual(subject.fetch_refind_zip(runner=runner), b"OFFICIAL")
+        self.assertEqual(calls, ["Python", "curl.exe"])
+
+    def test_download_tries_every_method_and_mirror_until_the_checksum_matches(self):
+        # Python gets a mirror's web page, curl.exe fails behind a proxy, PowerShell works.
+        subject = load_subject()
+        patches, runner, calls = self._download_env(
+            subject, python=b"<html>mirror page</html>", curl=OSError("proxy"), powershell=b"OFFICIAL")
+        with patches[0], patches[1], patches[2], patches[3]:
+            self.assertEqual(subject.fetch_refind_zip(runner=runner), b"OFFICIAL")
+        self.assertEqual(calls, ["Python", "curl.exe", "PowerShell"])
+
+    def test_download_without_internet_explains_and_changes_nothing(self):
+        subject = load_subject()
+        offline = OSError("getaddrinfo failed")
+        patches, runner, calls = self._download_env(subject, python=offline, curl=offline,
+                                                    powershell=offline)
+        with patches[0], patches[1], patches[2], patches[3], \
+             self.assertRaises(subject.ThemeError) as caught:
+            subject.fetch_refind_zip(runner=runner)
+        self.assertIn("--refind-zip", str(caught.exception))
+        self.assertIn("Nothing was changed", str(caught.exception))
+        self.assertEqual(len(calls), 3 * len(subject.REFIND_ZIP_URLS))
+
+    def test_download_on_linux_uses_python_only(self):
+        subject = load_subject()
+        patches, runner, calls = self._download_env(
+            subject, python=OSError("offline"), curl=b"OFFICIAL", powershell=b"OFFICIAL", platform="linux")
+        with patches[0], patches[1], patches[2], patches[3], self.assertRaises(subject.ThemeError):
+            subject.fetch_refind_zip(runner=runner)
+        self.assertEqual(set(calls), {"Python"})
 
     def test_arch_follows_the_os_not_the_python_build(self):
         subject = load_subject()
