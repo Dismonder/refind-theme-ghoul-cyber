@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-GCPL--1.0-orange?style=for-the-badge)](LICENSE)
 [![Theme Studio](https://img.shields.io/badge/App-Theme%20Studio-FF003C?style=for-the-badge&logo=github)](https://github.com/Dismonder/ghoul-cyber-theme-studio)
 
-> 🖥️ **New: [Ghoul Cyber – Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio)** — the app for this theme. Pick one of 18 themes, tune it with a live preview and build or install it with one click, on Linux and Windows. **[⬇️ Download](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**
+> 🖥️ **New: [Ghoul Cyber – Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio)** — the app for this theme. Pick one of 28 themes, tune it with a live preview and build or install it with one click, on Linux and Windows. **[⬇️ Download](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**
 
 ![Ghoul Cyber Preview](full_bootloader_preview_1080p.png)
 
@@ -260,9 +260,9 @@ Every value is validated (type, range, allowed characters) before anything is bu
 
 ## 🎨 Alternative Themes
 
-Besides the original Ghoul Cyber look, seventeen anime- and game-inspired OLED variants are included. Each one has its own AI artwork, OS cards and accent color. The installer, the telemetry text and the rEFInd layout are the same for all of them, and the theme is always installed as `themes/ghoul-cyber`.
+Besides the original Ghoul Cyber look, twenty-seven anime- and game-inspired OLED variants are included. Each one has its own AI artwork, OS cards and accent color. The installer, the telemetry text and the rEFInd layout are the same for all of them, and the theme is always installed as `themes/ghoul-cyber`.
 
-> 🎭 **Fan art.** These seventeen themes are unofficial, non-commercial fan art inspired by popular anime and games — not affiliated with or endorsed by their creators or rights holders; all characters and trademarks belong to their owners. Theme Studio marks them as *FAN ART*. Rights holders can request removal via an issue — see [`themes/FAN-ART.md`](themes/FAN-ART.md).
+> 🎭 **Fan art.** These twenty-seven themes are unofficial, non-commercial fan art inspired by popular anime and games — not affiliated with or endorsed by their creators or rights holders; all characters and trademarks belong to their owners. Theme Studio marks them as *FAN ART*. Rights holders can request removal via an issue — see [`themes/FAN-ART.md`](themes/FAN-ART.md).
 
 | Theme | Accent | Vibe |
 | :--- | :--- | :--- |
@@ -283,6 +283,16 @@ Besides the original Ghoul Cyber look, seventeen anime- and game-inspired OLED v
 | `hell-slayer` | hellfire `#FF4A1C` | armored demon slayer, skulls, lava |
 | `hollow-vessel` | periwinkle `#A8B8FF` | tiny horned knight, bug kingdom caverns, bench |
 | `wolf-witcher` | silver `#D9E1EC` | white-haired monster hunter, wolf medallion, two swords |
+| `rockerboy` | red `#FF2A3C` | legendary rockerboy, aviator shades, chrome arm, ink |
+| `edgerunner` | cyan `#00E5FF` | merc duo back to back, collar implants, smart pistol |
+| `violet-circuit` | violet `#B44CFF` | runner with a violet circuit face implant, ink |
+| `green-line` | green `#39FF6A` | fixer with green optics and an armored collar, ink |
+| `pink-static` | pink `#FF3EA5` | braided street runner, hot-pink implants, ink |
+| `gold-throne` | gold `#FFB800` | crime king on a lion throne, golden crown implant |
+| `glitch-shard` | neon pink `#FF2A6D` | anime glitch entity, shattered mane, green mask |
+| `blue-avenger` | blue `#2F5BFF` | anime avenger, spiky navy hair, red war paint |
+| `masked-braid` | pink `#FF4FA8` | anime corpo defector, pink braid, chrome mask |
+| `weak-king` | teal `#2EE6D6` | anime veteran edgerunner, red shades, grey long coat |
 
 ```bash
 python3 build_and_deploy_theme.py --theme cursed-domain

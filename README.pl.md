@@ -8,7 +8,7 @@
 [![Licencja](https://img.shields.io/badge/Licencja-GCPL--1.0-orange?style=for-the-badge)](LICENSE)
 [![Theme Studio](https://img.shields.io/badge/Aplikacja-Theme%20Studio-FF003C?style=for-the-badge&logo=github)](https://github.com/Dismonder/ghoul-cyber-theme-studio)
 
-> 🖥️ **Nowość: [Ghoul Cyber – Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio)** — aplikacja do tego motywu. Wybierz jeden z 18 motywów, dopasuj go z podglądem na żywo i zbuduj albo zainstaluj jednym kliknięciem, na Linuksie i Windowsie. **[⬇️ Pobierz](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**
+> 🖥️ **Nowość: [Ghoul Cyber – Theme Studio](https://github.com/Dismonder/ghoul-cyber-theme-studio)** — aplikacja do tego motywu. Wybierz jeden z 28 motywów, dopasuj go z podglądem na żywo i zbuduj albo zainstaluj jednym kliknięciem, na Linuksie i Windowsie. **[⬇️ Pobierz](https://github.com/Dismonder/ghoul-cyber-theme-studio/releases/latest)**
 
 ![Ghoul Cyber Preview](full_bootloader_preview_1080p.png)
 
@@ -260,9 +260,9 @@ Każda wartość jest sprawdzana (typ, zakres, dozwolone znaki), zanim cokolwiek
 
 ## 🎨 Alternatywne motywy
 
-Oprócz oryginalnego Ghoul Cyber w repozytorium jest siedemnaście wariantów OLED inspirowanych anime i grami. Każdy ma własną grafikę AI, własne kafelki systemów i własny kolor akcentu. Instalator, telemetria i układ rEFInd są wspólne, a motyw zawsze instaluje się jako `themes/ghoul-cyber`.
+Oprócz oryginalnego Ghoul Cyber w repozytorium jest dwadzieścia siedem wariantów OLED inspirowanych anime i grami. Każdy ma własną grafikę AI, własne kafelki systemów i własny kolor akcentu. Instalator, telemetria i układ rEFInd są wspólne, a motyw zawsze instaluje się jako `themes/ghoul-cyber`.
 
-> 🎭 **Fan art.** Tych siedemnaście motywów to nieoficjalny, niekomercyjny fan art inspirowany popularnymi anime i grami — niepowiązany z twórcami ani właścicielami praw i niewspierany przez nich; wszystkie postacie i znaki towarowe należą do ich właścicieli. Theme Studio oznacza je jako *FAN ART*. Właściciele praw mogą poprosić o usunięcie przez zgłoszenie (issue) — zobacz [`themes/FAN-ART.md`](themes/FAN-ART.md).
+> 🎭 **Fan art.** Tych dwadzieścia siedem motywów to nieoficjalny, niekomercyjny fan art inspirowany popularnymi anime i grami — niepowiązany z twórcami ani właścicielami praw i niewspierany przez nich; wszystkie postacie i znaki towarowe należą do ich właścicieli. Theme Studio oznacza je jako *FAN ART*. Właściciele praw mogą poprosić o usunięcie przez zgłoszenie (issue) — zobacz [`themes/FAN-ART.md`](themes/FAN-ART.md).
 
 | Motyw | Akcent | Klimat |
 | :--- | :--- | :--- |
@@ -283,6 +283,16 @@ Oprócz oryginalnego Ghoul Cyber w repozytorium jest siedemnaście wariantów OL
 | `hell-slayer` | piekielny `#FF4A1C` | opancerzony pogromca demonów, czaszki, lawa |
 | `hollow-vessel` | barwinek `#A8B8FF` | mały rogaty rycerz, jaskinie królestwa owadów, ławka |
 | `wolf-witcher` | srebro `#D9E1EC` | siwowłosy łowca potworów, medalion wilka, dwa miecze |
+| `rockerboy` | czerwony `#FF2A3C` | legendarny rockerboy, pilotki, chromowane ramię, tusz |
+| `edgerunner` | cyjan `#00E5FF` | duet najemników plecami do siebie, implanty, smart pistolet |
+| `violet-circuit` | fiolet `#B44CFF` | runnerka z fioletowym implantem na twarzy, tusz |
+| `green-line` | zielony `#39FF6A` | fixer z zielonymi optykami i pancernym kołnierzem, tusz |
+| `pink-static` | różowy `#FF3EA5` | uliczna runnerka z warkoczykami, różowe implanty, tusz |
+| `gold-throne` | złoty `#FFB800` | król półświatka na tronie z lwem, złota korona-implant |
+| `glitch-shard` | neonowy róż `#FF2A6D` | anime glitch, postrzępiona grzywa, zielona maska |
+| `blue-avenger` | niebieski `#2F5BFF` | anime mściciel, granatowe kolce włosów, czerwone znaki |
+| `masked-braid` | różowy `#FF4FA8` | anime korpo-dezerterka, różowy warkocz, maska |
+| `weak-king` | turkus `#2EE6D6` | anime weteran edgerunner, czerwone okulary, szary płaszcz |
 
 ```bash
 python3 build_and_deploy_theme.py --theme cursed-domain

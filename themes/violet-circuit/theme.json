@@ -1,0 +1,10 @@
+{
+  "name": "Violet Circuit",
+  "description": "Cyberpunk runner with a violet circuit face implant and glowing collar, anime cel-shaded on pure OLED black.",
+  "accent": "#B44CFF",
+  "title": "VIOLET_CIRCUIT_v1.0",
+  "kanji": "紫電",
+  "tagline": "[ JACK_IN :: STAY_SHARP ]",
+  "art_brightness": 1.0,
+  "fan_art": true
+}
